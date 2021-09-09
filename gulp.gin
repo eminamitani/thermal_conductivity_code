@@ -1,0 +1,24 @@
+isotropic conv opti prop phonon thermal
+title
+ASE calculation
+end
+
+cell
+ 5.450000  5.450000  5.450000 90.00000 90.00000 90.00000
+frac
+ Si core  0.8750000   0.8750000   0.8750000
+ Si core  0.8750000   0.3750000   0.3750000
+ Si core  0.3750000   0.8750000   0.3750000
+ Si core  0.3750000   0.3750000   0.8750000
+ Si core  0.1250000   0.1250000   0.1250000
+ Si core  0.1250000   0.6250000   0.6250000
+ Si core  0.6250000   0.1250000   0.6250000
+ Si core  0.6250000   0.6250000   0.1250000
+
+library stillinger_weber
+output xyz gulp.xyz
+broaden scale 5.0
+omega_af rads 0.0 2.76 3615.0
+temperature 300
+species   1
+Si     core    0.000000  
