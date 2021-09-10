@@ -1,0 +1,14 @@
+units           metal
+
+boundary        p p p
+
+box tilt large
+
+atom_style      atomic
+
+read_data       data.si
+
+pair_style	 sw
+pair_coeff 	 * * Si.sw Si
+
+neighbor    0.3 bin
