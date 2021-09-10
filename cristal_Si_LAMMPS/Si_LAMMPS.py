@@ -21,3 +21,7 @@ supercell_matrix = phlammps.get_supercell_matrix()
 
 #writing down force_constant
 phlammps.write_force_constants('force_constants.txt')
+phlammps.write_force_constants('force_constants.hdf5',hdf5=True)
+phlammps.write_unitcell_POSCAR()
+
+
