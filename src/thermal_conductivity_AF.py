@@ -13,7 +13,7 @@ def get_Vij(structure_file,FC_file):
 
     dist=np.zeros((natom,natom,3))
 
-    from nearest import find_nearest
+    from .nearest import find_nearest
     for i in range(natom):  
         for j in range(i):
             xdc,ydc,zdc,rmin=find_nearest(atoms,i,j)
