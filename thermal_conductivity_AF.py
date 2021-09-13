@@ -48,15 +48,15 @@ def get_Vij(structure_file,FC_file):
         for j in range(i):
             Vijx=-Rx[i,j]*fc_all[i,j]
             Vx[i,j]=Vijx
-            Vx[j,i]=-Vijx
+            Vx[j,i]=-Vijx.T
 
             Vijy=-Ry[i,j]*fc_all[i,j]
             Vy[i,j]=Vijy
-            Vy[j,i]=-Vijy
+            Vy[j,i]=-Vijy.T
 
             Vijz=-Rz[i,j]*fc_all[i,j]
             Vz[i,j]=Vijz
-            Vz[j,i]=-Vijz
+            Vz[j,i]=-Vijz.T
 
     #reshape to (natom*3,natom*3) that matches with GULP format        
     flatVx=np.reshape(Vx.transpose(0,2,1,3),(natom*3,natom*3))

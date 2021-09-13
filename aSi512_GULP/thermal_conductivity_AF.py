@@ -48,22 +48,23 @@ def get_Vij(structure_file,FC_file):
         for j in range(i):
             Vijx=-Rx[i,j]*fc_all[i,j]
             Vx[i,j]=Vijx
-            Vx[j,i]=-Vijx
+            Vx[j,i]=-Vijx.T
 
             Vijy=-Ry[i,j]*fc_all[i,j]
             Vy[i,j]=Vijy
-            Vy[j,i]=-Vijy
+            Vy[j,i]=-Vijy.T
 
             Vijz=-Rz[i,j]*fc_all[i,j]
             Vz[i,j]=Vijz
-            Vz[j,i]=-Vijz
+            Vz[j,i]=-Vijz.T
 
     #reshape to (natom*3,natom*3) that matches with GULP format
-    '''
-    This reshape cause trouble        
+    
+           
     flatVx=np.reshape(Vx.transpose(0,2,1,3),(natom*3,natom*3))
     flatVy=np.reshape(Vy.transpose(0,2,1,3),(natom*3,natom*3))
     flatVz=np.reshape(Vz.transpose(0,2,1,3),(natom*3,natom*3))
+    
     '''
     
     flatVx=np.zeros((natom*3,natom*3))
@@ -75,6 +76,7 @@ def get_Vij(structure_file,FC_file):
             flatVx[i:i+3,j:j+3]=Vx[i,j]
             flatVy[i:i+3,j:j+3]=Vy[i,j]
             flatVz[i:i+3,j:j+3]=Vz[i,j]
+    '''
 
     return flatVx, flatVy, flatVz
 
