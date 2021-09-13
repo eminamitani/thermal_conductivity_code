@@ -1,0 +1,18 @@
+units           metal
+
+boundary        p p p
+
+box tilt large
+
+atom_style      atomic
+atom_modify     map array sort 0 0.0
+read_data  data.si
+mass   1        28.0855000000 
+pair_style	 sw
+pair_coeff 	 * * Si.sw Si
+
+neighbor    0.3 bin
+
+#dynamical_matrix all eskm 1.0e-6 file Dyn.form binary no
+
+dynamical_matrix all regular 1.0e-6 file Dyn.form binary no 
