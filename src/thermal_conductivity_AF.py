@@ -122,3 +122,35 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
             Sijz[i,j]=EVijz[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
     
     return Sijx, Sijy, Sijz
+
+#using faster ortholombic algorithm
+def get_Vij_from_flat(structure_file,Dyn):
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+
+    dist=np.zeros((natom,natom,3))
+
+    from .nearest import find_nearest_ortho
+    dist=np.zeros((natom,natom,3))
+    positions=atoms.positions
+    cell=atoms.cell
+    for i in range(natom):  
+        for j in range(i):
+            dist[i,j]=find_nearest_ortho(positions,cell,i,j)
+            #invert
+            dist[j,i]=-dist[i,j]
+    
+    
+    Rx=np.repeat(dist[:,:,0],3,axis=1)
+    Rx=np.repeat(Rx,3,axis=0)
+    Ry=np.repeat(dist[:,:,1],3,axis=1)
+    Ry=np.repeat(Ry,3,axis=0)
+    Rz=np.repeat(dist[:,:,2],3,axis=1)
+    Rz=np.repeat(Rz,3,axis=0)  
+
+    #Hadamard product
+    Vx=Rx*Dyn*-1
+    Vy=Ry*Dyn*-1
+    Vz=Rz*Dyn*-1
+
+    return Vx, Vy, Vz

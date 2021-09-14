@@ -1,5 +1,8 @@
+
+
 #simple algorith for ortholombic case, but not fast
 def find_nearest_ortho(positions,cell,i,j):
+    import numpy as np
     distance=positions[j]-positions[i]
     rv=cell
     #cell is ortholombic, so only diagonal element should be considered
