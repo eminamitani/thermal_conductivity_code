@@ -122,7 +122,12 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
             Sijz[i,j]=EVijz[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
     
     return Sijx, Sijy, Sijz
-
+'''
+evaluate velocity operator.
+structure file: unitcell structure with vasp POSCAR format
+Dyn: Flat format (low:0x,0y,0z....., column:0x,0y,0z....) natom*3xnatom*3 Dynamical matrix
+(already scaled by mass, regular output of lammps dynamical_matrix) 
+'''
 #using faster ortholombic algorithm
 def get_Vij_from_flat(structure_file,Dyn):
     atoms=read(structure_file,format='vasp')
