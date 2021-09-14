@@ -1,3 +1,28 @@
+#simple algorith for ortholombic case, but not fast
+def find_nearest_ortho(positions,cell,i,j):
+    distance=positions[j]-positions[i]
+    rv=cell
+    #cell is ortholombic, so only diagonal element should be considered
+    xinit=distance[0]-2.0*rv[0,0]
+    yinit=distance[1]-2.0*rv[1,1]
+    zinit=distance[2]-2.0*rv[2,2]
+
+    #consider distance between equiliblium 27=3x3x3 cell
+    ii=np.array([i//9+1 for i in range(27)],dtype=float)
+    jj=np.array([(i//3)%3+1 for i in range(27)],dtype=float)
+    kk=np.array([i%3+1 for i in range(27)],dtype=float)
+
+    xcan=xinit+rv[0,0]*ii
+    ycan=yinit+rv[1,1]*jj
+    zcan=zinit+rv[2,2]*kk
+
+    candidate=np.stack((xcan,ycan,zcan),axis=1)
+    dist=[np.linalg.norm(candidate[i,:]) for i in range(27)]
+    min=np.min(dist)
+    index=np.max(np.where(dist==min))
+
+    return candidate[index]
+
 #find nearest image and return vector
 #atoms: ase.Atoms object
 #simply search all image atoms
