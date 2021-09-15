@@ -4,7 +4,7 @@ class physical_constants:
     def __init__(self):
         #make invisivle to act as constant
         #Boltzmanns constant (J/K)
-        self.__BOLTZMANN_CONSTAT=1.38066244e-23
+        self.__BOLTZMANN_CONSTANT=1.38066244e-23
         #Planck's constant (Js)
         self.__PLANCK_CONSTANT=6.62617636e-34
         #Speed of light (in cm/s)
@@ -25,8 +25,8 @@ class physical_constants:
         return np.sqrt(1.0e23*self.__eV_J*self.__AVOGADRO)/self.__SPEED_OF_LIGHT/(2.0*np.pi)
     
     @property
-    def BOLTZMANN_CONSTAT(self):
-        return self.__BOLTZMANN_CONSTAT
+    def BOLTZMANN_CONSTANT(self):
+        return self.__BOLTZMANN_CONSTANT
     
     @property
     def PLANCK_CONSTANT(self):
