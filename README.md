@@ -1,5 +1,5 @@
-# thermal conductivity calculation based on Allen-Feldman theory
-This package include modules to evaluate thermal conductivity in disordered system from Allen-Feldman theory[1].
+# pyAF: thermal conductivity calculation based on Allen-Feldman theory
+This python package include modules to evaluate thermal conductivity in disordered system from Allen-Feldman theory[1].
 
 # Requirements
 numpy, ASE, pyyaml
