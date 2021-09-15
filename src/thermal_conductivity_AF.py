@@ -4,6 +4,44 @@ from ase.io import read
 '''
 evaluate velocity operator.
 structure file: unitcell structure with vasp POSCAR format
+Dyn: Flat format (low:0x,0y,0z....., column:0x,0y,0z....) natom*3xnatom*3 Dynamical matrix
+(already scaled by mass, regular output of lammps dynamical_matrix) 
+'''
+#using faster ortholombic algorithm
+def get_Vij_from_flat(structure_file,Dyn):
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+
+    dist=np.zeros((natom,natom,3))
+
+    from nearest import find_nearest_ortho
+    dist=np.zeros((natom,natom,3))
+    positions=atoms.positions
+    cell=atoms.cell
+    for i in range(natom):  
+        for j in range(i):
+            dist[i,j]=find_nearest_ortho(positions,cell,i,j)
+            #invert
+            dist[j,i]=-dist[i,j]
+    
+    
+    Rx=np.repeat(dist[:,:,0],3,axis=1)
+    Rx=np.repeat(Rx,3,axis=0)
+    Ry=np.repeat(dist[:,:,1],3,axis=1)
+    Ry=np.repeat(Ry,3,axis=0)
+    Rz=np.repeat(dist[:,:,2],3,axis=1)
+    Rz=np.repeat(Rz,3,axis=0)  
+
+    #Hadamard product
+    Vx=Rx*Dyn*-1
+    Vy=Ry*Dyn*-1
+    Vz=Rz*Dyn*-1
+
+    return Vx, Vy, Vz
+
+'''
+evaluate velocity operator. Old version.
+structure file: unitcell structure with vasp POSCAR format
 FC_file: force constant file of phonopy format 
 '''
 def get_Vij(structure_file,FC_file):
@@ -122,43 +160,7 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
             Sijz[i,j]=EVijz[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
     
     return Sijx, Sijy, Sijz
-'''
-evaluate velocity operator.
-structure file: unitcell structure with vasp POSCAR format
-Dyn: Flat format (low:0x,0y,0z....., column:0x,0y,0z....) natom*3xnatom*3 Dynamical matrix
-(already scaled by mass, regular output of lammps dynamical_matrix) 
-'''
-#using faster ortholombic algorithm
-def get_Vij_from_flat(structure_file,Dyn):
-    atoms=read(structure_file,format='vasp')
-    natom=len(atoms.positions)
 
-    dist=np.zeros((natom,natom,3))
-
-    from nearest import find_nearest_ortho
-    dist=np.zeros((natom,natom,3))
-    positions=atoms.positions
-    cell=atoms.cell
-    for i in range(natom):  
-        for j in range(i):
-            dist[i,j]=find_nearest_ortho(positions,cell,i,j)
-            #invert
-            dist[j,i]=-dist[i,j]
-    
-    
-    Rx=np.repeat(dist[:,:,0],3,axis=1)
-    Rx=np.repeat(Rx,3,axis=0)
-    Ry=np.repeat(dist[:,:,1],3,axis=1)
-    Ry=np.repeat(Ry,3,axis=0)
-    Rz=np.repeat(dist[:,:,2],3,axis=1)
-    Rz=np.repeat(Rz,3,axis=0)  
-
-    #Hadamard product
-    Vx=Rx*Dyn*-1
-    Vy=Ry*Dyn*-1
-    Vz=Rz*Dyn*-1
-
-    return Vx, Vy, Vz
 
 '''
 input is class setup object
@@ -220,6 +222,79 @@ def thermal_conductivity_lammps_regular(setup):
     kappa_info=np.zeros((nmodes,3))
 
     with open('kappa_out','w') as kf:
+        kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
+        for i in range(nmodes):
+            xfreq = omega[i]*cmfact
+            expfreq = np.exp(xfreq)
+            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            kappa_info[i]=[omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]]
+            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
+
+    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
+
+'''
+input is class setup object
+'''
+def thermal_conductivity_phonopy(setup):
+    from ase.io import read
+    import numpy as np
+    from constants import physical_constants
+    print('enter thermal conductivity calculation: phonopy')
+    structure_file=setup.structure_file
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+    cell=atoms.cell
+    positions=atoms.positions
+    masses=atoms.get_masses()
+    nmodes=natom*3
+    #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+    from data_parse import read_fc_phonopy,phonopy_to_flat
+    fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+    lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+    Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
+    eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
+    pc=physical_constants()
+    omega=[]
+    for i in range(nmodes):
+        if eigenvalue[i] <0.0:
+            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+        else:
+            val=np.sqrt(eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
+
+    constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
+    constant = np.pi*constant/48.0
+
+    if setup.using_mean_spacing:
+        dwavg=0.0
+        for i in range(len(omega)-1):
+            if omega[i] > 0.0:
+                dwavg+=omega[i+1]-omega[i]
+            elif omega[i+1] >0.0:
+                dwavg+=omega[i+1]
+        dwavg=dwavg/(len(omega)-1)
+        broad=setup.broadening_factor*dwavg
+    else:
+        broad=setup.broadening_factor
+    
+    Di=np.zeros(len(omega))
+    for i in range(nmodes):
+        Di_loc = 0.0
+        for j in range(nmodes):
+            if(omega[i] > setup.omega_threshould):
+                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+                if(dwij > setup.broadening_threshould):
+                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
+        Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
+
+    vol = atoms.get_volume()
+    kappafct = 1.0e30/vol
+    cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTANT*setup.temperature)
+    kappa_info=np.zeros((nmodes,3))
+
+    with open('kappa_out_phonopy','w') as kf:
         kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
         for i in range(nmodes):
             xfreq = omega[i]*cmfact

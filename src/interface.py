@@ -21,6 +21,11 @@ def thermal_conductivity(setup_file):
         from thermal_conductivity_AF import thermal_conductivity_lammps_regular
         results=thermal_conductivity_lammps_regular(calc_setup)
         return results
+    elif(calc_setup.style=='phonopy'):
+        print('phonopy style')
+        from thermal_conductivity_AF import thermal_conductivity_phonopy
+        results=thermal_conductivity_phonopy(calc_setup)
+        return results
 
 
 
