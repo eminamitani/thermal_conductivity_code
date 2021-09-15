@@ -14,7 +14,7 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     dist=np.zeros((natom,natom,3))
 
-    from nearest import find_nearest_ortho
+    from pyAF.nearest import find_nearest_ortho
     dist=np.zeros((natom,natom,3))
     positions=atoms.positions
     cell=atoms.cell
@@ -51,7 +51,7 @@ def get_Vij(structure_file,FC_file):
 
     dist=np.zeros((natom,natom,3))
 
-    from nearest import find_nearest
+    from pyAF.nearest import find_nearest
     for i in range(natom):  
         for j in range(i):
             xdc,ydc,zdc,rmin=find_nearest(atoms,i,j)
@@ -168,7 +168,7 @@ input is class setup object
 def thermal_conductivity_lammps_regular(setup):
     from ase.io import read
     import numpy as np
-    from constants import physical_constants
+    from pyAF.constants import physical_constants
     print('enter thermal conductivity calculation: lammps-regular')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
@@ -238,7 +238,7 @@ input is class setup object
 def thermal_conductivity_phonopy(setup):
     from ase.io import read
     import numpy as np
-    from constants import physical_constants
+    from pyAF.constants import physical_constants
     print('enter thermal conductivity calculation: phonopy')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
@@ -248,7 +248,7 @@ def thermal_conductivity_phonopy(setup):
     masses=atoms.get_masses()
     nmodes=natom*3
     #convert phonopy style force constant to mass scaled lammps format dynamical matrix
-    from data_parse import read_fc_phonopy,phonopy_to_flat
+    from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
     fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
     lammps_dyn=phonopy_to_flat(fc_scaled,natom)
     Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)

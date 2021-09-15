@@ -1,4 +1,2 @@
-import sys
-sys.path.append('../src')
-from interface import thermal_conductivity
+from pyAF.interface import thermal_conductivity
 results=thermal_conductivity('setup_phonopy.yaml')
