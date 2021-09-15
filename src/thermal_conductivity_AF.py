@@ -159,3 +159,73 @@ def get_Vij_from_flat(structure_file,Dyn):
     Vz=Rz*Dyn*-1
 
     return Vx, Vy, Vz
+
+'''
+input is class setup object
+'''
+def thermal_conductivity_lammps_legular(setup):
+    from ase.io import read
+    import numpy as np
+    from interface import physical_constants
+    structure_file=setup.structure_file
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+    cell=atoms.cell
+    positions=atoms.positions
+    masses=atoms.get_masses()
+    nmodes=natom*3
+    lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+    Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
+    eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
+    pc=physical_constants()
+    omega=[]
+    for i in range(nmodes):
+        if eigenvalue[i] <0.0:
+            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+        else:
+            val=np.sqrt(eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
+
+    constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
+    constant = np.pi*constant/48.0
+
+    if setup.using_mean_spacing:
+        dwavg=0.0
+        for i in range(len(omega)-1):
+            if omega[i] > 0.0:
+                dwavg+=omega[i+1]-omega[i]
+            elif omega[i+1] >0.0:
+                dwavg+=omega[i+1]
+        dwavg=dwavg/(len(omega)-1)
+        broad=setup.broadening_factor*dwavg
+    else:
+        broad=setup.broadening_factor
+    
+    Di=np.zeros(len(omega))
+    for i in range(nmodes):
+        Di_loc = 0.0
+        for j in range(nmodes):
+            if(omega[i] > setup.omega_threshould):
+                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+                if(dwij > setup.broadning_threshould):
+                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
+        Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
+
+    vol = atoms.get_volume()
+    kappafct = 1.0e30/vol
+    cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTAT*setup.temperature)
+    kappa_info=[]
+
+    with open('kappa_out','w') as kf:
+        kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
+        for i in range(nmodes):
+            xfreq = omega[i]*cmfact
+            expfreq = np.exp(xfreq)
+            cv_i = pc.BOLTZMANN_CONSTAT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            kappa_info.append([omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]])
+            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
+    
+    return kappa_info
+
