@@ -163,10 +163,11 @@ def get_Vij_from_flat(structure_file,Dyn):
 '''
 input is class setup object
 '''
-def thermal_conductivity_lammps_legular(setup):
+def thermal_conductivity_lammps_regular(setup):
     from ase.io import read
     import numpy as np
     from constants import physical_constants
+    print('enter thermal conductivity calculation: lammps-regular')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
@@ -209,7 +210,7 @@ def thermal_conductivity_lammps_legular(setup):
         for j in range(nmodes):
             if(omega[i] > setup.omega_threshould):
                 dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
-                if(dwij > setup.broadning_threshould):
+                if(dwij > setup.broadening_threshould):
                     Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
         Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
 

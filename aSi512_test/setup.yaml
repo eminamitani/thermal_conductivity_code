@@ -1,0 +1,8 @@
+structure_file: 'optimized.vasp'
+dyn_file: 'Dyn.form'
+style: 'lammps-regular'
+temperature: 300
+broadening_factor: 5.0
+using_mean_spacing: True
+omega_threshould: 0.01
+broadening_threshould: 0.01

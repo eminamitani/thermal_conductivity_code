@@ -1,7 +1,7 @@
 import numpy as np
 class physical_constants:
 
-    def __init__(self) -> None:
+    def __init__(self):
         #make invisivle to act as constant
         #Boltzmanns constant (J/K)
         self.__BOLTZMANN_CONSTAT=1.38066244e-23
