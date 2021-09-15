@@ -166,7 +166,7 @@ input is class setup object
 def thermal_conductivity_lammps_legular(setup):
     from ase.io import read
     import numpy as np
-    from interface import physical_constants
+    from constants import physical_constants
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
