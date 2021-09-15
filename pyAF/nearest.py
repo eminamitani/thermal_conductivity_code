@@ -81,31 +81,5 @@ def find_nearest(atoms,i,j):
     return xdc,ydc,zdc,rmin
 
 
-#test
-if __name__=='__main__':
-    from ase.io import read
-    atoms=read('data.vasp',format='vasp')
-    natom=len(atoms.positions)
-    with open('nearest_distance.txt','w') as dist: 
-        for i in range(natom):
-            for j in range(i):
-                xdc, ydc, zdc, rmin=find_nearest(atoms,i,j)
-                dist.write("{0:4d}  {1:4d}  {2:6f}  {3:6f}  {4:6f} \n".format(i+1, j+1, xdc, ydc, zdc))
-    
-    #check with GULP output
-    import numpy as np
-    dx=np.loadtxt('distx.dat')[:,-1]
-    dy=np.loadtxt('disty.dat')[:,-1]
-    dz=np.loadtxt('distz.dat')[:,-1]
-
-    result=np.loadtxt('nearest_distance.txt')
-    rdx=result[:,2]
-    rdy=result[:,3]
-    rdz=result[:,4]
-
-    print(dx-rdx)
-    print(dy-rdy)
-    print(dz-rdz)
-
 
 
