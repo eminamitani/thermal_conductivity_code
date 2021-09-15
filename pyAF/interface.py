@@ -14,11 +14,20 @@ class setup:
         self.using_mean_spacing=input['using_mean_spacing']
         self.omega_threshould=input['omega_threshould']
         self.broadening_threshould=input['broadening_threshould']
+        self.two_dim=input['two_dim']
+        if self.two_dim:
+            self.vdw_thickness=input['vdw_thickness']
      
 def thermal_conductivity(setup_file):
     calc_setup=setup(setup_file)
     from pyAF.thermal_conductivity_AF import get_thermal_conductivity
     results=get_thermal_conductivity(calc_setup)
+    return results
+
+def resolved_thermal_conductivity(setup_file):
+    calc_setup=setup(setup_file)
+    from pyAF.thermal_conductivity_AF import get_resolved_thermal_conductivity
+    results=get_resolved_thermal_conductivity(calc_setup)
     return results
 
 

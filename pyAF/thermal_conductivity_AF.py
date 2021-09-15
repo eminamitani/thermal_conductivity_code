@@ -174,9 +174,26 @@ def get_thermal_conductivity(setup):
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
     cell=atoms.cell
+    '''
+    this code assume orthorombic cell, check
+    '''
+    celldiag=np.diag(cell)
+    cellnondiag=cell-celldiag
+    if(np.sum(cellnondiag) > 0.01):
+        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+    
     positions=atoms.positions
     masses=atoms.get_masses()
     nmodes=natom*3
+    '''
+    this module returns average of x-,y-,z- direction.
+    The volume to scale the thermal conductivity is the volume of cell.
+    For 2D system, resolved version is better to use, thus, here check and assert 
+    '''
+    if(setup.two_dim):
+        assert "for 2D system, use resolved version is better. \
+            In resolved version, x-,y-,z- direction outputted separetely and you can set vdw_thickness to set volume"
+            
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
         lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
@@ -244,6 +261,115 @@ def get_thermal_conductivity(setup):
             kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
 
     return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
+
+'''
+input is class setup object.
+thermal conductivity for x,y,z direction is outputted without taking average
+'''
+def get_resolved_thermal_conductivity(setup):
+    from ase.io import read
+    import numpy as np
+    from pyAF.constants import physical_constants
+    print('enter thermal conductivity calculation')
+    structure_file=setup.structure_file
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+    cell=atoms.cell
+    '''
+    this code assume orthorombic cell, check
+    '''
+    celldiag=np.diag(cell)
+    cellnondiag=cell-celldiag
+    if(np.sum(cellnondiag) > 0.01):
+        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+
+    positions=atoms.positions
+    masses=atoms.get_masses()
+    nmodes=natom*3
+    if(setup.style=='lammps-regular'):
+        print('style is lammps-regular')
+        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+
+    elif(setup.style=='phonopy'):
+        print('style is phonopy')
+        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+    else:
+        print('not supported style')
+        return
+
+    Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
+    eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
+    pc=physical_constants()
+    omega=[]
+    for i in range(nmodes):
+        if eigenvalue[i] <0.0:
+            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+        else:
+            val=np.sqrt(eigenvalue[i])*pc.scale_cm
+            omega.append(val)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
+
+    constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
+    #not averaged out for x-,y-,z- dimension
+    constant = np.pi*constant/16.0
+
+    if setup.using_mean_spacing:
+        dwavg=0.0
+        for i in range(len(omega)-1):
+            if omega[i] > 0.0:
+                dwavg+=omega[i+1]-omega[i]
+            elif omega[i+1] >0.0:
+                dwavg+=omega[i+1]
+        dwavg=dwavg/(len(omega)-1)
+        broad=setup.broadening_factor*dwavg
+    else:
+        broad=setup.broadening_factor
+    
+    #x-,y-,z-direction
+    Di=np.zeros((len(omega),3))
+    for i in range(nmodes):
+        Di_loc_x = 0.0
+        Di_loc_y = 0.0
+        Di_loc_z = 0.0
+        for j in range(nmodes):
+            if(omega[i] > setup.omega_threshould):
+                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+                if(dwij > setup.broadening_threshould):
+                    Di_loc_x += dwij*Sx[j,i]**2
+                    Di_loc_y += dwij*Sy[j,i]**2
+                    Di_loc_z += dwij*Sz[j,i]**2
+
+        Di[i,0] += Di_loc_x*constant/(omega[i]**2)
+        Di[i,1] += Di_loc_y*constant/(omega[i]**2)
+        Di[i,2] += Di_loc_z*constant/(omega[i]**2)
+    if(setup.two_dim):
+        vol=atoms.cell[0,0]*atoms.cell[1,1]*setup.vdw_thickness
+    else:
+        vol = atoms.get_volume()
+
+    kappafct = 1.0e30/vol
+    cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTANT*setup.temperature)
+    
+    diffusivity=np.zeros((nmodes,3))
+    kappa=np.zeros((nmodes,3))
+
+    with open('kappa_out_'+setup.style,'w') as kf:
+        kf.write('frequency[cm-1]   Diffusivity[cm^2/s]: x,y,z   Thermal_conductivity[W/mK]: x,y,z \n')
+        for i in range(nmodes):
+            xfreq = omega[i]*cmfact
+            expfreq = np.exp(xfreq)
+            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            diffusivity[i]=Di[i]*1.0e4
+            kappa[i]=cv_i*kappafct*Di[i]
+            kf.write('{0:8f}  {1:8f}  {2:8f} {3:8f} {4:8f} {5:8f} {6:8f}　\n'.
+            format(omega[i],diffusivity[i,0],diffusivity[i,1],diffusivity[i,2],
+            kappa[i,0],kappa[i,1],kappa[i,2]))
+
+    return {'freq':omega,'diffusivity':diffusivity,'thermal_conductivity':kappa}
 
 
 

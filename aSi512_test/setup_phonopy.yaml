@@ -6,3 +6,4 @@ broadening_factor: 5.0
 using_mean_spacing: True
 omega_threshould: 0.01
 broadening_threshould: 0.01
+two_dim: False
