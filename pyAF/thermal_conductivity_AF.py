@@ -165,11 +165,11 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
 '''
 input is class setup object
 '''
-def thermal_conductivity_lammps_regular(setup):
+def get_thermal_conductivity(setup):
     from ase.io import read
     import numpy as np
     from pyAF.constants import physical_constants
-    print('enter thermal conductivity calculation: lammps-regular')
+    print('enter thermal conductivity calculation')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
@@ -177,7 +177,20 @@ def thermal_conductivity_lammps_regular(setup):
     positions=atoms.positions
     masses=atoms.get_masses()
     nmodes=natom*3
-    lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+    if(setup.style=='lammps-regular'):
+        print('style is lammps-regular')
+        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+
+    elif(setup.style=='phonopy'):
+        print('style is phonopy')
+        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+    else:
+        print('not supported style')
+        return
+
     Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
@@ -221,7 +234,7 @@ def thermal_conductivity_lammps_regular(setup):
     cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTANT*setup.temperature)
     kappa_info=np.zeros((nmodes,3))
 
-    with open('kappa_out','w') as kf:
+    with open('kappa_out_'+setup.style,'w') as kf:
         kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
         for i in range(nmodes):
             xfreq = omega[i]*cmfact
@@ -232,76 +245,5 @@ def thermal_conductivity_lammps_regular(setup):
 
     return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
 
-'''
-input is class setup object
-'''
-def thermal_conductivity_phonopy(setup):
-    from ase.io import read
-    import numpy as np
-    from pyAF.constants import physical_constants
-    print('enter thermal conductivity calculation: phonopy')
-    structure_file=setup.structure_file
-    atoms=read(structure_file,format='vasp')
-    natom=len(atoms.positions)
-    cell=atoms.cell
-    positions=atoms.positions
-    masses=atoms.get_masses()
-    nmodes=natom*3
-    #convert phonopy style force constant to mass scaled lammps format dynamical matrix
-    from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
-    fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
-    lammps_dyn=phonopy_to_flat(fc_scaled,natom)
-    Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
-    eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
-    pc=physical_constants()
-    omega=[]
-    for i in range(nmodes):
-        if eigenvalue[i] <0.0:
-            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
-            omega.append(val)
-        else:
-            val=np.sqrt(eigenvalue[i])*pc.scale_cm
-            omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
 
-    constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
-    constant = np.pi*constant/48.0
-
-    if setup.using_mean_spacing:
-        dwavg=0.0
-        for i in range(len(omega)-1):
-            if omega[i] > 0.0:
-                dwavg+=omega[i+1]-omega[i]
-            elif omega[i+1] >0.0:
-                dwavg+=omega[i+1]
-        dwavg=dwavg/(len(omega)-1)
-        broad=setup.broadening_factor*dwavg
-    else:
-        broad=setup.broadening_factor
-    
-    Di=np.zeros(len(omega))
-    for i in range(nmodes):
-        Di_loc = 0.0
-        for j in range(nmodes):
-            if(omega[i] > setup.omega_threshould):
-                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
-                if(dwij > setup.broadening_threshould):
-                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
-        Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
-
-    vol = atoms.get_volume()
-    kappafct = 1.0e30/vol
-    cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTANT*setup.temperature)
-    kappa_info=np.zeros((nmodes,3))
-
-    with open('kappa_out_phonopy','w') as kf:
-        kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
-        for i in range(nmodes):
-            xfreq = omega[i]*cmfact
-            expfreq = np.exp(xfreq)
-            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
-            kappa_info[i]=[omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]]
-            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
-
-    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
 

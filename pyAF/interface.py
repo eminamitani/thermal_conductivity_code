@@ -17,15 +17,10 @@ class setup:
      
 def thermal_conductivity(setup_file):
     calc_setup=setup(setup_file)
-    if(calc_setup.style=='lammps-regular'):
-        from pyAF.thermal_conductivity_AF import thermal_conductivity_lammps_regular
-        results=thermal_conductivity_lammps_regular(calc_setup)
-        return results
-    elif(calc_setup.style=='phonopy'):
-        print('phonopy style')
-        from pyAF.thermal_conductivity_AF import thermal_conductivity_phonopy
-        results=thermal_conductivity_phonopy(calc_setup)
-        return results
+    from pyAF.thermal_conductivity_AF import get_thermal_conductivity
+    results=get_thermal_conductivity(calc_setup)
+    return results
+
 
 
 
