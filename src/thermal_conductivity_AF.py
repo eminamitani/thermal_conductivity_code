@@ -217,7 +217,7 @@ def thermal_conductivity_lammps_regular(setup):
     vol = atoms.get_volume()
     kappafct = 1.0e30/vol
     cmfact = pc.PLANCK_CONSTANT*pc.SPEED_OF_LIGHT/(pc.BOLTZMANN_CONSTANT*setup.temperature)
-    kappa_info=[]
+    kappa_info=np.zeros((nmodes,3))
 
     with open('kappa_out','w') as kf:
         kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
@@ -225,8 +225,8 @@ def thermal_conductivity_lammps_regular(setup):
             xfreq = omega[i]*cmfact
             expfreq = np.exp(xfreq)
             cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
-            kappa_info.append([omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]])
+            kappa_info[i]=[omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]]
             kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
-    
-    return kappa_info
+
+    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
 

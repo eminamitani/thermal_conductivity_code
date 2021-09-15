@@ -20,6 +20,7 @@ def thermal_conductivity(setup_file):
     if(calc_setup.style=='lammps-regular'):
         from thermal_conductivity_AF import thermal_conductivity_lammps_regular
         results=thermal_conductivity_lammps_regular(calc_setup)
+        return results
 
 
 
