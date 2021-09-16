@@ -142,12 +142,11 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
     Sijy=np.zeros((nmodes,nmodes))
     Sijz=np.zeros((nmodes,nmodes))
 
-    nfreqmin = 0
+
     inv_omega=np.zeros(nmodes)
     for i in range(nmodes):
-        if (nfreqmin==0 and omega[i]> 0.01):
-            nfreqmin = i
-        if omega[i] >0.0:
+        #tentative
+        if omega[i] >0.1:
             inv_omega[i]=1.0/np.sqrt(omega[i])
         else:
             inv_omega[i]=0.0
