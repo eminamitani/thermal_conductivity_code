@@ -212,10 +212,13 @@ def get_thermal_conductivity(setup):
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
     omega=[]
+    #extract minimum index of negative frequency
+    mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
-            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
+            val=-np.sqrt(-eigenvalue[i])*pc.scale_cm
             omega.append(val)
+            mode_negative=i
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
@@ -226,7 +229,8 @@ def get_thermal_conductivity(setup):
 
     if setup.using_mean_spacing:
         dwavg=0.0
-        for i in range(len(omega)-1):
+        #not consider the negative mode contribution
+        for i in range(mode_negative+1,nmodes-1):
             if omega[i] > 0.0:
                 dwavg+=omega[i+1]-omega[i]
             elif omega[i+1] >0.0:
@@ -237,7 +241,8 @@ def get_thermal_conductivity(setup):
         broad=setup.broadening_factor
     
     Di=np.zeros(len(omega))
-    for i in range(nmodes):
+    #not consider the negative mode contribution
+    for i in range(mode_negative+1,nmodes):
         Di_loc = 0.0
         for j in range(nmodes):
             if(omega[i] > setup.omega_threshould):
@@ -304,10 +309,13 @@ def get_resolved_thermal_conductivity(setup):
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
     omega=[]
+    #extract minimum index of negative frequency
+    mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
             val=np.sqrt(-eigenvalue[i])*pc.scale_cm
             omega.append(val)
+            mode_negative=i
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
@@ -319,19 +327,22 @@ def get_resolved_thermal_conductivity(setup):
 
     if setup.using_mean_spacing:
         dwavg=0.0
-        for i in range(len(omega)-1):
+        #using only positive energy side
+        for i in range(mode_negative+1,nmodes-1):
             if omega[i] > 0.0:
                 dwavg+=omega[i+1]-omega[i]
             elif omega[i+1] >0.0:
                 dwavg+=omega[i+1]
         dwavg=dwavg/(len(omega)-1)
+        print('average mode spacing:{0:8f} cm-1'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
         broad=setup.broadening_factor
     
     #x-,y-,z-direction
     Di=np.zeros((len(omega),3))
-    for i in range(nmodes):
+    #using only positive energy side
+    for i in range(mode_negative+1,nmodes):
         Di_loc_x = 0.0
         Di_loc_y = 0.0
         Di_loc_z = 0.0
