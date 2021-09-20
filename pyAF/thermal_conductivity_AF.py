@@ -109,7 +109,7 @@ Vx, Vy, Vz is the return of get_Vij
 omega--> phonon frequency
 note that eigenvector is assumed to store in column order (same as the return of numpy.linalg.eig)
 '''
-def get_Sij(Vx,Vy,Vz, eigenvector, omega):
+def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould):
 
     nmodes=len(omega)
 
@@ -146,7 +146,7 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega):
     inv_omega=np.zeros(nmodes)
     for i in range(nmodes):
         #tentative
-        if omega[i] >0.1:
+        if omega[i] >omega_threshould:
             inv_omega[i]=1.0/np.sqrt(omega[i])
         else:
             inv_omega[i]=0.0
@@ -221,7 +221,7 @@ def get_thermal_conductivity(setup):
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     constant = np.pi*constant/48.0
@@ -234,7 +234,8 @@ def get_thermal_conductivity(setup):
                 dwavg+=omega[i+1]-omega[i]
             elif omega[i+1] >0.0:
                 dwavg+=omega[i+1]
-        dwavg=dwavg/(len(omega)-1)
+        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
+        print('average mode spacing:{0:8f} cm-1'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
         broad=setup.broadening_factor
@@ -243,7 +244,7 @@ def get_thermal_conductivity(setup):
     #not consider the negative mode contribution
     for i in range(mode_negative+1,nmodes):
         Di_loc = 0.0
-        for j in range(nmodes):
+        for j in range(mode_negative+1,nmodes):
             if(omega[i] > setup.omega_threshould):
                 dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
                 if(dwij > setup.broadening_threshould):
@@ -318,7 +319,7 @@ def get_resolved_thermal_conductivity(setup):
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     #not averaged out for x-,y-,z- dimension
@@ -332,7 +333,7 @@ def get_resolved_thermal_conductivity(setup):
                 dwavg+=omega[i+1]-omega[i]
             elif omega[i+1] >0.0:
                 dwavg+=omega[i+1]
-        dwavg=dwavg/(len(omega)-1)
+        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
         print('average mode spacing:{0:8f} cm-1'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
@@ -345,7 +346,7 @@ def get_resolved_thermal_conductivity(setup):
         Di_loc_x = 0.0
         Di_loc_y = 0.0
         Di_loc_z = 0.0
-        for j in range(nmodes):
+        for j in range(mode_negative+1,nmodes):
             if(omega[i] > setup.omega_threshould):
                 dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
                 if(dwij > setup.broadening_threshould):
