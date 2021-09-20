@@ -313,7 +313,7 @@ def get_resolved_thermal_conductivity(setup):
     mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
-            val=np.sqrt(-eigenvalue[i])*pc.scale_cm
+            val=-np.sqrt(-eigenvalue[i])*pc.scale_cm
             omega.append(val)
             mode_negative=i
         else:
