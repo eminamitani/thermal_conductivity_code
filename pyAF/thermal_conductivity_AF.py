@@ -498,6 +498,6 @@ def get_thermal_conductivity_THz_unit(setup):
             expfreq = np.exp(xfreq)
             cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
             kappa_info[i]=[omega[i]/2.0/np.pi,Di[i]*1.0e4,cv_i*kappafct*Di[i]]
-            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
+            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i]/2.0/np.pi,Di[i]*1.0e4,cv_i*kappafct*Di[i]))
 
     return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
