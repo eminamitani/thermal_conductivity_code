@@ -30,6 +30,12 @@ def resolved_thermal_conductivity(setup_file):
     results=get_resolved_thermal_conductivity(calc_setup)
     return results
 
+def thermal_conductivity_THz(setup_file):
+    calc_setup=setup(setup_file)
+    from pyAF.thermal_conductivity_AF import get_thermal_conductivity_THz_unit
+    results=get_thermal_conductivity_THz_unit(calc_setup)
+    return results
+
 
 
 

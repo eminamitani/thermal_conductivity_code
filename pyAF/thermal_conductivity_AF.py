@@ -383,4 +383,121 @@ def get_resolved_thermal_conductivity(setup):
     return {'freq':omega,'diffusivity':diffusivity,'thermal_conductivity':kappa}
 
 
+'''
+input is class setup object
+using THz unit as frequency unit
+(to compare with Shiga-san's code)
+'''
+def get_thermal_conductivity_THz_unit(setup):
+    from ase.io import read
+    import numpy as np
+    from pyAF.constants import physical_constants
+    print('enter thermal conductivity calculation')
+    structure_file=setup.structure_file
+    atoms=read(structure_file,format='vasp')
+    natom=len(atoms.positions)
+    cell=atoms.cell
+    '''
+    this code assume orthorombic cell, check
+    '''
+    celldiag=np.diag(cell)
+    cellnondiag=cell-celldiag
+    if(np.sum(cellnondiag) > 0.01):
+        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+    
+    positions=atoms.positions
+    masses=atoms.get_masses()
+    nmodes=natom*3
+    '''
+    this module returns average of x-,y-,z- direction.
+    The volume to scale the thermal conductivity is the volume of cell.
+    For 2D system, resolved version is better to use, thus, here check and assert 
+    '''
+    if(setup.two_dim):
+        assert "for 2D system, use resolved version is better. \
+            In resolved version, x-,y-,z- direction outputted separetely and you can set vdw_thickness to set volume"
+            
+    if(setup.style=='lammps-regular'):
+        print('style is lammps-regular')
+        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
 
+    elif(setup.style=='phonopy'):
+        print('style is phonopy')
+        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+    else:
+        print('not supported style')
+        return
+
+    Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
+    eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
+    pc=physical_constants()
+    omega=[]
+    #extract minimum index of negative frequency
+    #omega is angular frequency
+    mode_negative=0
+    for i in range(nmodes):
+        if eigenvalue[i] <0.0:
+            val=-np.sqrt(-eigenvalue[i])*pc.scale_THz*2.0*np.pi
+            omega.append(val)
+            mode_negative=i
+        else:
+            val=np.sqrt(eigenvalue[i])*pc.scale_THz*2.0*np.pi
+            omega.append(val)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
+
+    #constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
+    #constant = np.pi*constant/48.0
+
+    if setup.using_mean_spacing:
+        dwavg=0.0
+        #not consider the negative mode contribution
+        for i in range(mode_negative+1,nmodes-1):
+            if omega[i] > 0.0:
+                dwavg+=omega[i+1]-omega[i]
+            elif omega[i+1] >0.0:
+                dwavg+=omega[i+1]
+        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
+        print('average mode spacing:{0:8f} 2piTHz'.format(dwavg))
+        broad=setup.broadening_factor*dwavg
+    else:
+        broad=setup.broadening_factor
+
+    #vol: Angstrom^3
+    vol = atoms.get_volume()
+    #scale Sx, Sy, Sz here
+    Sx=Sx*pc.hbar/(4.0*vol)
+    Sy=Sy*pc.hbar/(4.0*vol)
+    Sz=Sz*pc.hbar/(4.0*vol)
+
+    constant=np.pi*vol**2/(3.0*pc.hbar**2)
+
+    Di=np.zeros(len(omega))
+    #not consider the negative mode contribution
+    for i in range(mode_negative+1,nmodes):
+        Di_loc = 0.0
+        for j in range(mode_negative+1,nmodes):
+            if(omega[i] > setup.omega_threshould):
+                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+                if(dwij > setup.broadening_threshould):
+                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
+        Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
+
+    #Di=Di*1.0e-4
+    kappafct = 1.0e30/vol
+    #1.0e12:Hz to THz
+    freqfact = pc.hbar/(2.0*pc.BOLTZMANN_CONSTANT*setup.temperature)*1.0e12
+    kappa_info=np.zeros((nmodes,3))
+
+    with open('kappa_out_THz'+setup.style,'w') as kf:
+        kf.write('frequency[THz]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
+        for i in range(nmodes):
+            xfreq = omega[i]*freqfact
+            expfreq = np.exp(xfreq)
+            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            kappa_info[i]=[omega[i]/2.0/np.pi,Di[i]*1.0e4,cv_i*kappafct*Di[i]]
+            kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
+
+    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}

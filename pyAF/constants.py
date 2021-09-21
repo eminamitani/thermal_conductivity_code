@@ -43,3 +43,7 @@ class physical_constants:
     @property
     def SPEED_OF_LIGHT(self):
         return self.__SPEED_OF_LIGHT
+    
+    @property
+    def hbar(self):
+        return self.__PLANCK_CONSTANT/np.pi/2.0
