@@ -22,7 +22,7 @@ After activate the virtual environment, clone the repository and install require
 Since this package is not archved in PyPI and still under construction, it is recommended to install in editable mode.
 ```
 pip3 install numpy ase pyyaml
-git clone https://github.com/eminamitani/thermal_conductivity_code.git .
+git clone https://github.com/eminamitani/thermal_conductivity_code.git 
 cd ./thermal_conductivity_code 
 pip3 install -e .
 ```
