@@ -86,7 +86,7 @@ Each elements contain the information per mode.
 `interface.resolved_thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}`.  
 In this case, diffusivity and thermal_conductivity is not averaged, thus they have three elements per mode (x,y,z components).
 
-
+**The units of frequency, diffusivity, thermal conductivity are cm-1, cm^2/s, W/m K, respectively.**
 
 ## Ref
 [1]Philip B. Allen and Joseph L. Feldman. Thermal conductivity of disordered harmonic solids. Phys. Rev. B, Vol. 48, pp. 12581–12588, Nov 1993.
