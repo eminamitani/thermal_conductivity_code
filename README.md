@@ -29,9 +29,15 @@ pip3 install -e .
 
 ## Usage
 
-First, dynamical matrix or force constant information is required.
----
-### example of LAMMPS input
+1. obtain dynamical matrix or force constant file
+2. run python script using pyAF interface
+
+The example of amorphous Si system is stored in `aSi512_test`. The results are evaluated by comparing the calculation results from GULP(http://gulp.curtin.edu.au/gulp/) code. 
+
+![](/sample.png)
+
+
+### example of LAMMPS input to get dynamical matrix
 ---
 This is the input of LAMMPS to form `Dyn.form` (dynamical matrix) in aSi512-test directory.
 ```
@@ -47,7 +53,8 @@ neighbor    3.0 bin
 dynamical_matrix all regular 1.0e-6 file Dyn.form binary no 
 ```
 
-### evaluate thermal conductivity via interface
+### input for the pyAF interface
+---
 pyAF use yaml file to get the computational setup. For example, `setup.yaml` has following lines.
 ```
 structure_file: 'optimized.vasp'    #file name of VASP POSCAR format of unitcell information
@@ -71,6 +78,8 @@ kappa=np.sum(results['thermal_conductivity'])
 print(kappa)
 ```
 
+### modules in the interface
+---
 `interface.thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}` .
 Each elements contain the information per mode. 
 
@@ -78,7 +87,6 @@ Each elements contain the information per mode.
 In this case, diffusivity and thermal_conductivity is not averaged, thus they have three elements per mode (x,y,z components).
 
 
-The example of amorphous Si system is stored in `aSi512_test`. The results are evaluated by comparing the calculation results from GULP(http://gulp.curtin.edu.au/gulp/) code.
 
 ## Ref
 [1]Philip B. Allen and Joseph L. Feldman. Thermal conductivity of disordered harmonic solids. Phys. Rev. B, Vol. 48, pp. 12581–12588, Nov 1993.
