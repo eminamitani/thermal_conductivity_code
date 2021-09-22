@@ -1,20 +1,39 @@
-# pyAF: thermal conductivity calculation based on Allen-Feldman theory
+# pyAF
+
+>thermal conductivity calculation based on Allen-Feldman theory
+---
+
 This python package include modules to evaluate thermal conductivity in disordered system from Allen-Feldman theory[1].
 The dynamical matrix file from LAMMPS and force constant file of phonopy format can be used as input.
 
 ## Requirements
-numpy, ASE, pyyaml
+- numpy 
+- ASE 
+- pyyaml
 
 ## Install
-At the directory where setup.py exist, type the following command
+It is recommended to use virtual environment to avoid conflict of package name. 
+The sample of preparation of virtual environment & activation is as follows.
 ```
-pip install -e .
+python3 -m venv env
+source ./env/bin/activate
+```
+After activate the virtual environment, clone the repository and install required package.
+Since this package is not archved in PyPI and still under construction, it is recommended to install in editable mode.
+```
+pip3 install numpy ase pyyaml
+git clone https://github.com/eminamitani/thermal_conductivity_code.git .
+cd ./thermal_conductivity_code 
+pip3 install -e .
 ```
 
 ## Usage
+
 First, dynamical matrix or force constant information is required.
+---
 ### example of LAMMPS input
-This is the input of LAMMPS to form Dyn.form (dynamical matrix) in aSi512-test directory.
+---
+This is the input of LAMMPS to form `Dyn.form` (dynamical matrix) in aSi512-test directory.
 ```
 units           metal
 boundary        p p p
@@ -31,15 +50,16 @@ dynamical_matrix all regular 1.0e-6 file Dyn.form binary no
 ### evaluate thermal conductivity via interface
 pyAF use yaml file to get the computational setup. For example, `setup.yaml` has following lines.
 ```
-structure_file: 'optimized.vasp' #file name of VASP POSCAR format of unitcell information
-dyn_file: 'Dyn.form'  #file name of dynamical matrix
-style: 'lammps-regular' #lammps-regular or phonopy
-temperature: 300        #temperature to evaluate thermal conductivity
-broadening_factor: 5.0  #Lorentzian width
-using_mean_spacing: True #use mean spacing of frequency in smearing. If True, broadening_factor*average_spacing is used as the width of Lorentzian
-omega_threshould: 0.01 #minimum frequency to take into account
-broadening_threshould: 0.01 #minimum value of Lorentzian weight to take into account
-two_dim: False #two dimensional or three dimensional
+structure_file: 'optimized.vasp'    #file name of VASP POSCAR format of unitcell information
+dyn_file: 'Dyn.form'                #file name of dynamical matrix
+style: 'lammps-regular'             #lammps-regular or phonopy
+temperature: 300                    #temperature to evaluate thermal conductivity
+broadening_factor: 5.0              #Lorentzian width
+using_mean_spacing: True            #use mean spacing of frequency in smearing. 
+                                    #If True, broadening_factor*average_spacing is used as the width of Lorentzian
+omega_threshould: 0.01              #minimum frequency to take into account
+broadening_threshould: 0.01         #minimum value of Lorentzian weight to take into account
+two_dim: False                      #two dimensional or three dimensional
 ```
 
 You can get averaged thermal conductivity by the following script.
@@ -51,10 +71,14 @@ kappa=np.sum(results['thermal_conductivity'])
 print(kappa)
 ```
 
-`interface.thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}` per mode.
-`interface.resolved_thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}` per mode. 
-But, diffusivity and thermal_conductivity is not averaged, thus they have three elements per mode (x,y,z components).
+`interface.thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}` .
+Each elements contain the information per mode. 
 
+`interface.resolved_thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}`.  
+In this case, diffusivity and thermal_conductivity is not averaged, thus they have three elements per mode (x,y,z components).
+
+
+The example of amorphous Si system is stored in `aSi512_test`. The results are evaluated by comparing the calculation results from GULP(http://gulp.curtin.edu.au/gulp/) code.
 
 ## Ref
 [1]Philip B. Allen and Joseph L. Feldman. Thermal conductivity of disordered harmonic solids. Phys. Rev. B, Vol. 48, pp. 12581–12588, Nov 1993.
