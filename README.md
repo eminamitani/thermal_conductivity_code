@@ -10,6 +10,8 @@ The dynamical matrix file from LAMMPS and force constant file of phonopy format 
 - numpy 
 - ASE 
 - pyyaml
+- phonopy
+
 
 ## Install
 It is recommended to use virtual environment to avoid conflict of package name. 
@@ -21,7 +23,8 @@ source ./env/bin/activate
 After activate the virtual environment, clone the repository and install required package.
 Since this package is not archved in PyPI and still under construction, it is recommended to install in editable mode.
 ```
-pip3 install numpy ase pyyaml
+pip3 install numpy ase pyyaml 
+pip3 install phonopy
 git clone https://github.com/eminamitani/thermal_conductivity_code.git 
 cd ./thermal_conductivity_code 
 pip3 install -e .
@@ -67,6 +70,7 @@ using_mean_spacing: True            #use mean spacing of frequency in smearing.
 omega_threshould: 0.01              #minimum frequency to take into account
 broadening_threshould: 0.01         #minimum value of Lorentzian weight to take into account
 two_dim: False                      #two dimensional or three dimensional
+symmetrize_fc: True                #symmetrization of force constant (acoustic sum rule)
 ```
 
 You can get averaged thermal conductivity by the following script.
