@@ -168,6 +168,7 @@ def get_thermal_conductivity(setup):
     from ase.io import read
     import numpy as np
     from pyAF.constants import physical_constants
+    from pyAF.data_parse import symmetrize_lammps, symmetrize_phonopy
     print('enter thermal conductivity calculation')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
@@ -195,14 +196,22 @@ def get_thermal_conductivity(setup):
             
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
-        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
+        else:
+            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
-        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
-        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
-        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
-        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_phonopy(atoms,setup.dyn_file)
+        else:
+            #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+            from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+            fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+            lammps_dyn=phonopy_to_flat(fc_scaled,natom)
     else:
         print('not supported style')
         return
@@ -275,6 +284,7 @@ def get_resolved_thermal_conductivity(setup):
     from ase.io import read
     import numpy as np
     from pyAF.constants import physical_constants
+    from pyAF.data_parse import symmetrize_lammps, symmetrize_phonopy
     print('enter thermal conductivity calculation')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
@@ -293,14 +303,23 @@ def get_resolved_thermal_conductivity(setup):
     nmodes=natom*3
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
-        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
+
+        else:
+            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
-        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
-        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
-        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
-        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_phonopy(atoms,setup.dyn_file)
+        else:
+            #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+            from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+            fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+            lammps_dyn=phonopy_to_flat(fc_scaled,natom)
     else:
         print('not supported style')
         return

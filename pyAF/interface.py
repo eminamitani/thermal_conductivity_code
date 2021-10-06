@@ -15,6 +15,7 @@ class setup:
         self.omega_threshould=input['omega_threshould']
         self.broadening_threshould=input['broadening_threshould']
         self.two_dim=input['two_dim']
+        self.symmetrize_fc=input['symmetrize_fc']
         if self.two_dim:
             self.vdw_thickness=input['vdw_thickness']
      
