@@ -123,10 +123,12 @@ def symmetrize_lammps(atoms,FC_file):
                  [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                  primitive_matrix=[[1,0,0],[0,1,0],[0,0,1]],log_level=1)
     
-    #read as ndarray, no mass scaling here
+    #read as ndarray
     nmodes=natom*3
     lammps_dyn=np.loadtxt(FC_file).reshape((nmodes,nmodes))
     converted_dyn=flat_to_phonopy(lammps_dyn,natom)
+    
+    #convert mass scaled dynamical matrix to force constant form
     fc_phonopy=dynmat_to_fcphonopy(converted_dyn,natom,masses)
     
     phonon.set_force_constants(fc_phonopy)
