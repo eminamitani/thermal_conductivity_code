@@ -31,9 +31,10 @@ def get_Ci_ver1(eigenvector, position, k_vector):
 
     polalization_L=np.dot(unit_vector, disp.T)
     polalization_T=np.dot(unit_vector_T, disp.T)
+
     phase=np.exp(1.0j*np.dot(k_vector, position.T))
 
-    return np.linalg.norm(np.dot(polalization_L, phase)), np.linalg.norm(np.dot(polalization_T.T, phase))
+    return np.linalg.norm(np.dot(polalization_L, phase))**2, np.linalg.norm(np.dot(polalization_T.T, phase))**2
 
 def get_Ci_ver2(eigenvector, position, k_vector):
     '''
@@ -55,8 +56,49 @@ def get_Ci_ver2(eigenvector, position, k_vector):
     polalization_T=np.cross(array_unit_vector,disp) 
     phase=np.exp(1.0j*np.dot(k_vector, position.T))
 
-    return np.linalg.norm(np.dot(polalization_L, phase)), np.linalg.norm(np.dot(polalization_T.T, phase))
+    return np.linalg.norm(np.dot(polalization_L, phase))**2, np.linalg.norm(np.dot(polalization_T.T, phase))**2/2
 
+def get_Ci_ver3(eigenvector, position, k_value):
+    '''
+    evaluate Fourier component of a single mode.
+    ver3 consider the average value along [100],[010],[001] direction
+    input:
+    eigenvector: np.array(3*natom), eigenvector of the mode
+    position: np.array(natom,3), cartesian coordinate of the system
+    k_value: float, value of x-component in k-vector
+    '''    
+
+    natom=len(position)
+    k_vector_x=np.array([k_value,0.0,0.0])
+    k_vector_y=np.array([0.0,k_value,0.0])
+    k_vector_z=np.array([0.0,0.0,k_value])
+
+    unit_vector_x=np.array([1.0,0.0,0.0])
+    unit_vector_y=np.array([0.0,1.0,0.0])
+    unit_vector_z=np.array([0.0,0.0,1.0])
+
+    disp=np.reshape(eigenvector,(natom,3))
+
+    polalization_Lx=np.dot(unit_vector_x, disp.T)
+    polalization_Ly=np.dot(unit_vector_y, disp.T)
+    polalization_Lz=np.dot(unit_vector_z, disp.T)
+    
+    array_unit_vector_x=np.repeat(unit_vector_x.reshape(1,3),natom,axis=0)
+    array_unit_vector_y=np.repeat(unit_vector_y.reshape(1,3),natom,axis=0)
+    array_unit_vector_z=np.repeat(unit_vector_z.reshape(1,3),natom,axis=0)
+
+    polalization_Tx=np.cross(array_unit_vector_x,disp) 
+    polalization_Ty=np.cross(array_unit_vector_y,disp) 
+    polalization_Tz=np.cross(array_unit_vector_z,disp) 
+
+    phase_x=np.exp(1.0j*np.dot(k_vector_x, position.T))
+    phase_y=np.exp(1.0j*np.dot(k_vector_y, position.T))
+    phase_z=np.exp(1.0j*np.dot(k_vector_z, position.T))
+    
+    cl=(np.linalg.norm(np.dot(polalization_Lx,phase_x))**2+np.linalg.norm(np.dot(polalization_Ly,phase_y))**2+np.linalg.norm(np.dot(polalization_Lz,phase_z))**2)/3
+    ct=(np.linalg.norm(np.dot(polalization_Tx.T,phase_x))**2+np.linalg.norm(np.dot(polalization_Ty.T,phase_y))**2+np.linalg.norm(np.dot(polalization_Tz.T,phase_z))**2)/3
+
+    return cl,ct
 
 def dynamic_structure_factor():
     '''
