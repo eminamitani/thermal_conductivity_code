@@ -100,9 +100,28 @@ def get_Ci_ver3(eigenvector, position, k_value):
 
     return cl,ct
 
-def dynamic_structure_factor():
+def broadening(omega1, omega2, sigma):
+    delta=1.0/np.pi*sigma/((omega1-omega2)**2+sigma*sigma)
+    return delta
+
+def dynamic_structure_factor(C_L, C_T, mesh_energy, frequency, smearing):
     '''
     evaluate dynamic structure factor
+    C_L: np.array(n_kpt, n_modes), Fourier component for each mode
+    C_T: np.array(n_kpt, n_modes), Fourier component for each mode
+    mesh_energy: mesh of energy to evaluate dynamic structure factor
+    frequency: vibrational eigenvalues in the system
+    smearing: smearing factor
     '''
-    pass
+    
+    n_kpt=C_L.shape[0]
+    dsf_L=np.zeros((n_kpt,len(mesh_energy)))
+    dsf_T=np.zeros((n_kpt,len(mesh_energy)))
 
+    for ik in range(n_kpt):
+        for ie, ene in enumerate(mesh_energy):
+            for imode, mode in enumerate(frequency):
+                dsf_L[ik,ie]=dsf_L[ik,ie]+C_L[ik,imode]*broadening(ene,mode,smearing)
+                dsf_T[ik,ie]=dsf_T[ik,ie]+C_T[ik,imode]*broadening(ene,mode,smearing)
+
+    return dsf_L, dsf_T
