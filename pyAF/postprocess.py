@@ -56,7 +56,7 @@ def get_Ci_ver2(eigenvector, position, k_vector):
     polalization_T=np.cross(array_unit_vector,disp) 
     phase=np.exp(1.0j*np.dot(k_vector, position.T))
 
-    return np.linalg.norm(np.dot(polalization_L, phase))**2, np.linalg.norm(np.dot(polalization_T.T, phase))**2/2
+    return np.linalg.norm(np.dot(polalization_L, phase))**2, np.linalg.norm(np.dot(polalization_T.T, phase))**2
 
 def get_Ci_ver3(eigenvector, position, k_value):
     '''
