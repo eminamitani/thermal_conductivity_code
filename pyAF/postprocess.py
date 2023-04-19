@@ -125,3 +125,20 @@ def dynamic_structure_factor(C_L, C_T, mesh_energy, frequency, smearing):
                 dsf_T[ik,ie]=dsf_T[ik,ie]+C_T[ik,imode]*broadening(ene,mode,smearing)
 
     return dsf_L, dsf_T
+
+def get_IPR(eigenvector):
+    '''
+    Inversion perticipation ratio
+    Very direct calculation (maybe there is more faster way)
+    '''
+    nmodes=len(eigenvector)
+    ipr_result=np.zeros(nmodes)
+
+    for i in range(nmodes):
+        vector=eigenvector[:,i]
+        inner=vector*vector
+        tmp=inner*inner
+        ipr_result[i]=tmp.sum()
+
+
+    return ipr_result
