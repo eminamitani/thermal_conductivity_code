@@ -57,6 +57,9 @@ def flat_to_phonopy(force_constants,natom):
     return np.reshape(force_constants,(natom,3,natom,3)).transpose(0,2,1,3)
 
 
+'''
+This function name is confusing, it is actually convert mass scaling in LAMMPS dynmat
+'''
 def dynmat_to_fcphonopy(dynmat,natom,masses):
     '''
     convert from dynamical matrix in ndarray(natom,natom,3,3) to force constant
