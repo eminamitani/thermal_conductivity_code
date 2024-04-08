@@ -142,3 +142,17 @@ def get_IPR(eigenvector):
 
 
     return ipr_result
+
+def get_IPR_rev(eigenvector):
+    '''
+    Inversion perticipation ratio
+    Very direct calculation (maybe there is more faster way)
+    '''
+    nmodes=len(eigenvector)
+    ipr_result=np.zeros(nmodes)
+
+    for i in range(nmodes):
+        vector=eigenvector[:,i]
+        ipr_result[i]=np.power(vector,4).sum()
+
+    return ipr_result
