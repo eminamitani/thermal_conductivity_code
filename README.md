@@ -71,6 +71,7 @@ omega_threshould: 0.01              #minimum frequency to take into account
 broadening_threshould: 0.01         #minimum value of Lorentzian weight to take into account
 two_dim: False                      #two dimensional or three dimensional
 symmetrize_fc: True                #symmetrization of force constant (acoustic sum rule)
+fix_diag: True                      #fix diagonal elements of Sij for 0.0. Basically this did not affect the results.
 ```
 
 You can get averaged thermal conductivity by the following script.
