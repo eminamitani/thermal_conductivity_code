@@ -14,13 +14,13 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     dist=np.zeros((natom,natom,3))
 
-    from pyAF.nearest import find_nearest_ortho
+    from pyAF.nearest import find_nearest_optimized
     dist=np.zeros((natom,natom,3))
     positions=atoms.positions
     cell=atoms.cell
     for i in range(natom):  
         for j in range(i):
-            dist[i,j]=find_nearest_ortho(positions,cell,i,j)
+            dist[i,j]=find_nearest_optimized(atoms,i,j)
             #invert
             dist[j,i]=-dist[i,j]
     
@@ -38,70 +38,6 @@ def get_Vij_from_flat(structure_file,Dyn):
     Vz=Rz*Dyn*-1
 
     return Vx, Vy, Vz
-
-'''
-evaluate velocity operator. Old version.
-structure file: unitcell structure with vasp POSCAR format
-FC_file: force constant file of phonopy format 
-'''
-def get_Vij(structure_file,FC_file):
-    atoms=read(structure_file,format='vasp')
-    masses=atoms.get_masses()
-    natom=len(atoms.positions)
-
-    dist=np.zeros((natom,natom,3))
-
-    from pyAF.nearest import find_nearest
-    for i in range(natom):  
-        for j in range(i):
-            xdc,ydc,zdc,rmin=find_nearest(atoms,i,j)
-            dist[i,j]=np.array([xdc,ydc,zdc])
-    
-    #reading phonopy format force constant
-    with open(FC_file,'r') as fc:
-        lines=fc.readlines()
-
-        nlineblock=4
-        fc_all=np.zeros((natom,natom,3,3))
-        start=1
-        for i in range(natom):
-            for j in range(natom):
-                fc_block=lines[start+1:start+nlineblock]
-                fc=np.loadtxt(fc_block)
-                fc_all[i,j]=fc/np.sqrt(masses[i]*masses[j])
-                #fc_all[i,j]=fc
-                start=start+nlineblock
-    
-    Rx=dist[:,:,0]
-    Ry=dist[:,:,1]
-    Rz=dist[:,:,2]  
-
-    Vx=np.zeros((natom,natom,3,3))
-    Vy=np.zeros((natom,natom,3,3))
-    Vz=np.zeros((natom,natom,3,3))
-
-    #loop only for lower triangle
-    #make sure that Vij=-Vji
-    for i in range(natom):
-        for j in range(i):
-            Vijx=-Rx[i,j]*fc_all[i,j]
-            Vx[i,j]=Vijx
-            Vx[j,i]=-Vijx.T
-
-            Vijy=-Ry[i,j]*fc_all[i,j]
-            Vy[i,j]=Vijy
-            Vy[j,i]=-Vijy.T
-
-            Vijz=-Rz[i,j]*fc_all[i,j]
-            Vz[i,j]=Vijz
-            Vz[j,i]=-Vijz.T
-
-    #reshape to (natom*3,natom*3) that matches with GULP format        
-    flatVx=np.reshape(Vx.transpose(0,2,1,3),(natom*3,natom*3))
-    flatVy=np.reshape(Vy.transpose(0,2,1,3),(natom*3,natom*3))
-    flatVz=np.reshape(Vz.transpose(0,2,1,3),(natom*3,natom*3))
-
-    return flatVx, flatVy, flatVz
 
 '''
 evaluate heat flux operator matrix element.

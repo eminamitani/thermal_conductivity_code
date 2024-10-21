@@ -1,5 +1,5 @@
 
-
+import numpy as np
 #simple algorith for ortholombic case
 def find_nearest_ortho(positions,cell,i,j):
     import numpy as np
@@ -26,60 +26,30 @@ def find_nearest_ortho(positions,cell,i,j):
 
     return candidate[index]
 
-#find nearest image and return vector
-#atoms: ase.Atoms object
-#simply search all image atoms
-#just python version of GULP implementention
-#there should be more efficient way
 
-def find_nearest(atoms,i,j):
-    #for 3-dim case
-
-    distance=atoms.get_distance(i,j,vector=True)
-    xdc=distance[0]
-    ydc=distance[1]
-    zdc=distance[2]
-
-    rmin=1000.0
-
-    rv=atoms.cell
-
-    if (atoms.cell.shape[0] ==3):
-        #set
-        xcdi=xdc-2.0*rv[0,0]
-        ycdi=ydc-2.0*rv[1,0]
-        zcdi=zdc-2.0*rv[2,0]
-
-        for ii in [-1,0,1]:
-            xcdi=xcdi+rv[0,0]
-            ycdi=ycdi+rv[1,0]
-            zcdi=zcdi+rv[2,0]
-
-            xcdj=xcdi-2.0*rv[0,1]
-            ycdj=ycdi-2.0*rv[1,1]
-            zcdj=zcdi-2.0*rv[2,1]
-
-            for jj in [-1,0,1]:
-                xcdj=xcdj+rv[0,1]
-                ycdj=ycdj+rv[1,1]
-                zcdj=zcdj+rv[2,1]
-                xcrd = xcdj - 2.0*rv[0,2]
-                ycrd = ycdj - 2.0*rv[1,2]
-                zcrd = zcdj - 2.0*rv[2,2]
-
-                for kk in [-1,0,1]:
-                    xcrd = xcrd + rv[0,2]
-                    ycrd = ycrd + rv[1,2]
-                    zcrd = zcrd + rv[2,2]
-                    r = xcrd*xcrd + ycrd*ycrd + zcrd*zcrd
-                    if (r<rmin):
-                        rmin = r
-                        xdc = xcrd
-                        ydc = ycrd
-                        zdc = zcrd
+# MIC distance evaluation in ASE atoms object
+def find_nearest_optimized(atoms, i, j):
+    # direct distances
+    distance = atoms.get_distance(i, j, vector=True)
     
-    return xdc,ydc,zdc,rmin
-
+    # cell vectors
+    rv = atoms.cell
+    
+    # 27 candidates
+    shifts = np.array([[-1, 0, 1]]).T
+    ii, jj, kk = np.meshgrid(shifts, shifts, shifts)
+    
+    # all shifts
+    candidates = distance + ii.flatten()[:, None] * rv[0] + \
+                             jj.flatten()[:, None] * rv[1] + \
+                             kk.flatten()[:, None] * rv[2]
+    
+    # calculate distances
+    dists = np.linalg.norm(candidates, axis=1)
+    
+    # minimal
+    min_index = np.argmin(dists)
+    return candidates[min_index]
 
 
 
