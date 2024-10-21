@@ -1,5 +1,6 @@
 import numpy as np
 from ase.io import read
+from pyAF.nearest import find_nearest_optimized
 
 '''
 evaluate velocity operator.
@@ -14,7 +15,7 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     dist=np.zeros((natom,natom,3))
 
-    from pyAF.nearest import find_nearest_optimized
+    
     dist=np.zeros((natom,natom,3))
     positions=atoms.positions
     cell=atoms.cell
@@ -39,6 +40,55 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     return Vx, Vy, Vz
 
+
+from joblib import Parallel, delayed
+
+# 各 (i, j) ペアに対してVijを計算する関数
+def compute_Vij_chunk(i, j, atoms, Dyn):
+    # 距離の計算
+    dist_ij = find_nearest_optimized(atoms, i, j)
+
+    # 各成分 (x, y, z) の行列要素を計算
+    Rx = np.tile(dist_ij[0], (3, 3)) * Dyn[3*i:3*i+3, 3*j:3*j+3] * -1
+    Ry = np.tile(dist_ij[1], (3, 3)) * Dyn[3*i:3*i+3, 3*j:3*j+3] * -1
+    Rz = np.tile(dist_ij[2], (3, 3)) * Dyn[3*i:3*i+3, 3*j:3*j+3] * -1
+
+    return i, j, Rx, Ry, Rz
+
+def get_Vij_from_flat_parallel(structure_file, Dyn):
+    atoms = read(structure_file, format='vasp')
+    natom = len(atoms.positions)
+
+    # 並列処理で距離計算と行列生成を行う
+    results = Parallel(n_jobs=-1, backend='loky')(
+        delayed(compute_Vij_chunk)(i, j, atoms, Dyn) for i in range(natom) for j in range(i)
+    )
+
+    # Vx, Vy, Vz 行列の初期化
+    Vx = np.zeros((3*natom, 3*natom))
+    Vy = np.zeros((3*natom, 3*natom))
+    Vz = np.zeros((3*natom, 3*natom))
+
+    # 結果を辞書に保存 (i, j) -> (Rx, Ry, Rz)
+    results_dict = {}
+    for i, j, Rx, Ry, Rz in results:
+        results_dict[(i, j)] = (Rx, Ry, Rz)
+
+    # Vx, Vy, Vz 行列を一貫した順序で更新
+    for i in range(natom):
+        for j in range(i):
+            if (i, j) in results_dict:
+                Rx, Ry, Rz = results_dict[(i, j)]
+                Vx[3*i:3*i+3, 3*j:3*j+3] = Rx
+                Vy[3*i:3*i+3, 3*j:3*j+3] = Ry
+                Vz[3*i:3*i+3, 3*j:3*j+3] = Rz
+
+                # 対称性を利用して (j, i) の成分も設定
+                Vx[3*j:3*j+3, 3*i:3*i+3] = Rx.T
+                Vy[3*j:3*j+3, 3*i:3*i+3] = Ry.T
+                Vz[3*j:3*j+3, 3*i:3*i+3] = Rz.T
+
+    return Vx, Vy, Vz
 '''
 evaluate heat flux operator matrix element.
 Vx, Vy, Vz is the return of get_Vij
