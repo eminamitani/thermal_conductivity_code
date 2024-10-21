@@ -109,7 +109,7 @@ Vx, Vy, Vz is the return of get_Vij
 omega--> phonon frequency
 note that eigenvector is assumed to store in column order (same as the return of numpy.linalg.eig)
 '''
-def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould):
+def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould,fix_diag):
 
     nmodes=len(omega)
 
@@ -157,6 +157,13 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould):
             Sijx[i,j]=EVijx[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
             Sijy[i,j]=EVijy[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
             Sijz[i,j]=EVijz[i,j]*(omega[i]+omega[j])*inv_omega[i]*inv_omega[j]
+    
+    #fix diagonal element
+    if(fix_diag):
+        for i in range(nmodes):
+            Sijx[i,i]=0.0
+            Sijy[i,i]=0.0
+            Sijz[i,i]=0.0
     
     return Sijx, Sijy, Sijz
 
@@ -230,7 +237,7 @@ def get_thermal_conductivity(setup):
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould,setup.fix_diag)
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     constant = np.pi*constant/48.0
@@ -465,7 +472,7 @@ def get_thermal_conductivity_THz_unit(setup):
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_THz*2.0*np.pi
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould, setup.fix_diag)
 
     #constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     #constant = np.pi*constant/48.0
