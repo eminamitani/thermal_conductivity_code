@@ -115,6 +115,7 @@ print(kappa)
 ### General tips
 ---
 - order of LAMMPS dynamical matrix element
+
 In parallel calculation case, the order of dynamical matrix element may be different from the order of atoms in the structure file.
 (the output of `write_data` command is not sorted by atom ID)
 In this case, if you convert the lammps-data file to VASP POSCAR format, 
