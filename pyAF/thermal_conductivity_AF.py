@@ -15,14 +15,14 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     dist=np.zeros((natom,natom,3))
 
-    from pyAF.nearest import find_nearest_ortho
+    #from pyAF.nearest import find_nearest_ortho
     dist=np.zeros((natom,natom,3))
     positions=atoms.positions
     cell=atoms.cell
     for i in range(natom):  
         for j in range(i):
-            #dist[i,j]=find_nearest_optimized(atoms,i,j)
-            dist[i,j]=find_nearest_ortho(positions,cell,i,j)
+            dist[i,j]=find_nearest_optimized(atoms,i,j)
+            #dist[i,j]=find_nearest_ortho(positions,cell,i,j)
             #invert
             dist[j,i]=-dist[i,j]
     
