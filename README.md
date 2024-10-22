@@ -118,8 +118,7 @@ print(kappa)
 
 In parallel calculation case, the order of dynamical matrix element may be different from the order of atoms in the structure file.
 (the output of `write_data` command is not sorted by atom ID)
-In this case, if you convert the lammps-data file to VASP POSCAR format, 
-the calculation results will be wrong. 
+In this case, if you convert the lammps-data file to VASP POSCAR format by ASE read & write, the calculation results will be wrong. 
 
 ### modules in the interface
 ---
