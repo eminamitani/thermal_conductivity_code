@@ -42,7 +42,7 @@ def get_Vij_from_flat(structure_file,Dyn):
     return Vx, Vy, Vz
 
 
-from joblib import Parallel, delayed
+#from joblib import Parallel, delayed
 
 # 各 (i, j) ペアに対してVijを計算する関数
 def compute_Vij_chunk(i, j, atoms, Dyn):
