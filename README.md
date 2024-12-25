@@ -83,6 +83,43 @@ kappa=np.sum(results['thermal_conductivity'])
 print(kappa)
 ```
 
+### example for 2-dim case
+---
+input for the 2D system is as follows.
+```
+structure_file: 'optimized.vasp'
+dyn_file: 'Dyn.form'
+style: 'lammps-regular'
+temperature: 300
+broadening_factor: 5.0
+using_mean_spacing: True
+omega_threshould: 10.0
+broadening_threshould: 0.01
+two_dim: True #two dimensional system option
+vdw_thickness: 3.4  #van der Waals thickness for 2D system
+symmetrize_fc: True
+fix_diag: True
+```
+
+example of the script is as follows.
+```
+import sys
+import pyAF
+from pyAF.interface import resolved_thermal_conductivity
+results=resolved_thermal_conductivity('setup.yaml')
+import numpy as np
+kappa=np.sum(results['thermal_conductivity'])
+print(kappa)
+```
+
+### General tips
+---
+- order of LAMMPS dynamical matrix element
+
+In parallel calculation case, the order of dynamical matrix element may be different from the order of atoms in the structure file.
+(the output of `write_data` command is not sorted by atom ID)
+In this case, if you convert the lammps-data file to VASP POSCAR format by ASE read & write, the calculation results will be wrong. 
+
 ### modules in the interface
 ---
 `interface.thermal_conductivity` returns the dictionary of `{'freq','diffusivity','thermal_conductivity'}` .

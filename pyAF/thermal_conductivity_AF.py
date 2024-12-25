@@ -15,13 +15,14 @@ def get_Vij_from_flat(structure_file,Dyn):
 
     dist=np.zeros((natom,natom,3))
 
-    
+    #from pyAF.nearest import find_nearest_ortho
     dist=np.zeros((natom,natom,3))
     positions=atoms.positions
     cell=atoms.cell
     for i in range(natom):  
         for j in range(i):
             dist[i,j]=find_nearest_optimized(atoms,i,j)
+            #dist[i,j]=find_nearest_ortho(positions,cell,i,j)
             #invert
             dist[j,i]=-dist[i,j]
     
@@ -41,7 +42,7 @@ def get_Vij_from_flat(structure_file,Dyn):
     return Vx, Vy, Vz
 
 
-from joblib import Parallel, delayed
+#from joblib import Parallel, delayed
 
 # 各 (i, j) ペアに対してVijを計算する関数
 def compute_Vij_chunk(i, j, atoms, Dyn):
@@ -331,7 +332,7 @@ def get_resolved_thermal_conductivity(setup):
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould)
+    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould,setup.fix_diag)
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     #not averaged out for x-,y-,z- dimension
