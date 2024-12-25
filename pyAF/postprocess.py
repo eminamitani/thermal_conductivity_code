@@ -156,3 +156,99 @@ def get_IPR_rev(eigenvector):
         ipr_result[i]=np.power(vector,4).sum()
 
     return ipr_result
+
+
+class SQE:
+    '''
+    Class for calculating dynamic structure factor
+    Definition: D. L. Price and J. K. Carpenter, J. Non-Cryst. Solids 153-174, 92 (1998)
+    '''
+    def __init__(self, eigenvectors, eigenvalues, atoms):
+        '''
+        eigenvectors: eigenvectors of the system, shape=(3*Natoms,3*Natoms)
+
+        Here I assume that eigenvector is that obtained from np.linalg.eigh
+        For example, 
+        ```
+        df_dm=pd.read_table('Dyn.form', delimiter=' ', header=None) 
+        Natom=1050
+        dm=np.array(df_dm).reshape(Natom*3, Natom*3)
+        eigenvalues, eigenvectors=np.linalg.eigh(dm)
+        ```
+        eigenvalues: eigenvalues of the system, shape=(nmodes)
+        atoms: atoms object from ase
+        '''
+        self.eigenvectors=eigenvectors
+        self.eigenvalues=eigenvalues
+        self.atoms=atoms
+        self.positions=atoms.get_positions()
+        self.masses=atoms.get_masses()
+        
+        #just inplemented for silica
+        self.b_factor=np.ones(len(atoms))
+
+        for i,atom in enumerate(atoms):
+            if atom.symbol == 'O':
+                self.b_factor[i]=5.805
+            elif atom.symbol == 'Si':
+                self.b_factor[i]=4.149
+
+        SPEED_OF_LIGHT=2.99792458e10
+        #eV to J
+        eV_J=1.6021917e-19
+        #Avogadros number
+        AVOGADRO=6.022045e23
+        planck=6.62607015e-34
+        scale_THz=np.sqrt(0.1*eV_J*AVOGADRO)/(2.0*np.pi)
+        Hz_eV=planck/eV_J
+        THz_Hz=1.0e12
+        scale_eV=scale_THz*THz_Hz*Hz_eV
+        freq=np.sqrt(np.abs(eigenvalues))*np.sign(eigenvalues)
+        
+        #unit of energy: eV
+        self.frequency=freq*scale_eV
+        self.normal_modes=np.reshape(eigenvectors.T,(3*len(atoms),len(atoms),3))
+
+        self.b2_avg=np.sum(self.b_factor**2)/len(self.b_factor)
+        
+        
+
+    def get_factor(self,Q, threshould):
+        '''
+        normal_mode: normal mode of the system, shape=(nmodes,Natoms,3)
+        frequency: frequency of the normal mode, shape=(nmodes)
+        positions: positions of the atoms, shape=(Natoms,3)
+        masses: masses of the atoms, shape=(Natoms) 
+        b: b factor of the atoms, shape=(Natoms)
+        Q: wave vector, shape=(3)
+        '''
+        
+        phase=np.exp(-1j*(np.dot(self.positions,Q)))
+        factors=np.zeros(len(self.frequency),dtype=np.complex128)
+
+        for i,mode in enumerate(self.frequency):
+            if mode>threshould:
+                poralization=np.dot(self.normal_modes[i,:,:],Q)
+                denominator=np.sqrt(2.0*self.masses*mode)
+                atomic_factor=self.b_factor*poralization/denominator*phase
+
+                sum_factor=np.sum(atomic_factor)
+                abs=sum_factor*sum_factor.conjugate()
+                factors[i]=abs
+        
+        return factors
+    
+    def mode_sum(self,Q,threshould, energy,T, gaussian_sigma):
+        kb=8.617333e-05
+        factors=self.get_factor(Q,threshould)
+        gaussian=np.exp(-0.5*((self.frequency-energy)/gaussian_sigma)**2)
+        bose_distribution=1/(np.exp(energy/(kb*T))-1)+1
+        normalize_factor=bose_distribution/len(self.atoms)
+
+        planck=6.62607015e-34
+        eV_J=1.6021917e-19
+        planck_eV=planck/eV_J
+        AVOGADRO=6.022045e23
+        unit_convert=planck_eV*planck*1.0e20*1000*AVOGADRO
+
+        return np.sum(factors*gaussian*normalize_factor)*unit_convert/self.b2_avg/len(self.atoms)
