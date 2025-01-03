@@ -161,7 +161,8 @@ def get_IPR_rev(eigenvector):
 class SQE:
     '''
     Class for calculating dynamic structure factor
-    Definition: D. L. Price and J. K. Carpenter, J. Non-Cryst. Solids 153-174, 92 (1998)
+    Definition: D. L. Price and J. M. Carpenter, 'Scattering function of vitreous silica,' 
+    Journal of Non-Crystalline Solids, vol. 92, no. 1, pp. 153-174, 1987
     '''
     def __init__(self, eigenvectors, eigenvalues, atoms):
         '''
@@ -192,6 +193,12 @@ class SQE:
                 self.b_factor[i]=5.805
             elif atom.symbol == 'Si':
                 self.b_factor[i]=4.149
+            elif atom.symbol == 'Na':
+                self.b_factor[i]=3.63
+            elif atom.symbol == 'Li':
+                self.b_factor[i]=-1.90
+            else:
+                print('atom type {} is not implemented yet'.format(atom.symbol))
 
         SPEED_OF_LIGHT=2.99792458e10
         #eV to J
