@@ -143,16 +143,20 @@ def get_IPR(eigenvector):
 
     return ipr_result
 
-def get_IPR_rev(eigenvector):
+def get_IPR_original_definition(eigenvector):
     '''
     Inversion perticipation ratio
-    Very direct calculation (maybe there is more faster way)
+    $$
+    IPR=N_{atom} \sum_{l=1}^{nmodes} (\sum_{\alpha}(u^l_\alpha^2)})^2 
+    $$
     '''
-    nmodes=len(eigenvector)
-    ipr_result=np.zeros(nmodes)
+    #eigenvector: np.array(3*natom, nmodes), eigenvector of the mode
+    nmodes=len(eigenvector[1])
+    natoms=len(eigenvector[0])//3
 
-    for i in range(nmodes):
-        vector=eigenvector[:,i]
-        ipr_result[i]=np.power(vector,4).sum()
+    eigen_3D = np.reshape(eigenvector.T, (nmodes, natoms, 3))
 
-    return ipr_result
+    vec2sum = np.sum(eigen_3D**2, axis=2) 
+    ipr = np.sum(vec2sum**2, axis=1) * natoms
+
+    return ipr
