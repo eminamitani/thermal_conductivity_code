@@ -8,3 +8,4 @@ omega_threshould: 0.01
 broadening_threshould: 0.01
 two_dim: False
 symmetrize_fc: True
+fix_diag: True
