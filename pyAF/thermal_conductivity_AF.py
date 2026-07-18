@@ -2,6 +2,391 @@ import numpy as np
 from ase.io import read
 from pyAF.nearest import find_nearest_optimized
 
+
+def _mode_heat_capacity(xfreq, boltzmann_constant):
+    """Return the harmonic-mode heat capacity with a stable zero-frequency limit."""
+    xfreq = abs(float(xfreq))
+    if xfreq < 1.0e-8:
+        return boltzmann_constant
+    if xfreq > 700.0:
+        return 0.0
+    denominator = -np.expm1(-xfreq)
+    return (
+        boltzmann_constant
+        * xfreq
+        * xfreq
+        * np.exp(-xfreq)
+        / denominator**2
+    )
+
+
+def _angular_thz_per_wavenumber(pc):
+    """Conversion factor from cm^-1 to angular frequency in 2*pi*THz."""
+    return pc.scale_THz * 2.0 * np.pi / pc.scale_cm
+
+
+def _translation_mode_overlaps(eigenvectors, masses):
+    """Return each mass-weighted eigenvector's overlap with rigid translations."""
+    nmodes = eigenvectors.shape[0]
+    natom = len(masses)
+    if nmodes != 3 * natom:
+        raise ValueError("eigenvector and mass dimensions are inconsistent")
+
+    translations = np.zeros((nmodes, 3))
+    sqrt_masses = np.sqrt(masses)
+    for axis in range(3):
+        translations[axis::3, axis] = sqrt_masses
+    translations /= np.linalg.norm(translations, axis=0)
+    overlaps = np.sum((eigenvectors.T @ translations) ** 2, axis=1)
+    return overlaps, translations
+
+
+def _evaluate_mode_gates(
+    setup,
+    eigenvalues,
+    eigenvectors,
+    masses,
+    frequencies_cm,
+):
+    """Evaluate stability and rigid-translation gates before AF transport."""
+    overlap_min = getattr(setup, "translation_overlap_min", 0.99)
+    capture_min = getattr(setup, "translation_capture_min", 2.999)
+    leakage_max = getattr(setup, "translation_leakage_max", 0.001)
+    asr_residual_max = getattr(setup, "asr_residual_max", 1.0e-10)
+    negative_tolerance = getattr(setup, "negative_mode_tolerance_cm", 0.1)
+    two_dim = bool(getattr(setup, "two_dim", False))
+    flexural_min = getattr(setup, "flexural_polarization_min", 0.8)
+    allow_2d_flexural_fail = bool(
+        getattr(setup, "allow_2d_flexural_fail", False)
+    )
+
+    frequencies_cm = np.asarray(frequencies_cm)
+    overlaps, translations = _translation_mode_overlaps(eigenvectors, masses)
+    translation_indices = np.argsort(overlaps)[-3:][::-1]
+    translation_mask = np.zeros(len(eigenvalues), dtype=bool)
+    translation_mask[translation_indices] = True
+    lowest_indices = np.argsort(eigenvalues)[:3]
+
+    translation_capture = float(np.sum(overlaps[translation_indices]))
+    minimum_translation_overlap = float(
+        np.min(overlaps[translation_indices])
+    )
+    dynamical_norm = np.linalg.norm(eigenvalues)
+    projected_translation = eigenvectors.T @ translations
+    asr_residual = eigenvectors @ (
+        eigenvalues[:, None] * projected_translation
+    )
+    if dynamical_norm == 0.0:
+        asr_residual_ratio = 0.0
+    else:
+        asr_residual_ratio = float(
+            np.linalg.norm(asr_residual) / dynamical_norm
+        )
+
+    nmodes = len(eigenvalues)
+    mode_vectors = eigenvectors.reshape((len(masses), 3, nmodes))
+    z_polarization = np.sum(mode_vectors[:, 2, :] ** 2, axis=0)
+    nontranslation_mask = ~translation_mask
+    negative_nontranslation = np.flatnonzero(
+        nontranslation_mask & (frequencies_cm < 0.0)
+    )
+    unstable_nontranslation = np.flatnonzero(
+        nontranslation_mask
+        & (frequencies_cm < -negative_tolerance)
+    )
+    small_negative_nontranslation = np.setdiff1d(
+        negative_nontranslation,
+        unstable_nontranslation,
+        assume_unique=True,
+    )
+
+    negative_flexural = np.array([], dtype=int)
+    if two_dim:
+        negative_flexural = negative_nontranslation[
+            z_polarization[negative_nontranslation] >= flexural_min
+        ]
+    negative_other = np.setdiff1d(
+        negative_nontranslation,
+        negative_flexural,
+        assume_unique=True,
+    )
+    unstable_flexural = np.intersect1d(
+        unstable_nontranslation,
+        negative_flexural,
+        assume_unique=True,
+    )
+    small_negative_flexural = np.intersect1d(
+        small_negative_nontranslation,
+        negative_flexural,
+        assume_unique=True,
+    )
+    unstable_other = np.setdiff1d(
+        unstable_nontranslation,
+        unstable_flexural,
+        assume_unique=True,
+    )
+    small_negative_other = np.setdiff1d(
+        small_negative_nontranslation,
+        small_negative_flexural,
+        assume_unique=True,
+    )
+
+    if len(unstable_other) > 0:
+        gate1_status = "FAIL"
+    elif len(unstable_flexural) > 0:
+        gate1_status = "FAIL_2D_FLEXURAL"
+    elif len(small_negative_other) > 0:
+        gate1_status = "REVIEW"
+    elif len(small_negative_flexural) > 0:
+        gate1_status = "REVIEW_2D_FLEXURAL"
+    else:
+        gate1_status = "PASS"
+
+    ordering_ok = set(translation_indices) == set(lowest_indices)
+    overlap_ok = (
+        minimum_translation_overlap >= overlap_min
+        and translation_capture >= capture_min
+    )
+    asr_ok = asr_residual_ratio <= asr_residual_max
+
+    translation_below_cutoff = (
+        translation_mask
+        & (np.abs(frequencies_cm) <= setup.omega_threshould)
+    )
+    positive_physical_below_cutoff = (
+        nontranslation_mask
+        & (frequencies_cm > 0.0)
+        & (frequencies_cm <= setup.omega_threshould)
+    )
+    cutoff_inactive = (
+        translation_below_cutoff
+        | positive_physical_below_cutoff
+        | (nontranslation_mask & (frequencies_cm < 0.0))
+    )
+    cutoff_active = frequencies_cm > setup.omega_threshould
+    inactive_translation_capture = float(
+        np.sum(overlaps[cutoff_inactive])
+    )
+    active_translation_leakage = float(
+        np.sum(overlaps[cutoff_active])
+    )
+    cutoff_protects = (
+        inactive_translation_capture >= capture_min
+        and active_translation_leakage <= leakage_max
+    )
+
+    warnings = []
+    if ordering_ok and overlap_ok and asr_ok:
+        gate2_status = "PASS"
+    elif cutoff_protects:
+        if two_dim:
+            gate2_status = "PASS_WITH_CUTOFF_2D"
+        else:
+            gate2_status = "PASS_WITH_CUTOFF"
+        warnings.append(
+            "Gate 2 did not uniquely validate the three lowest modes; "
+            "the configured omega_threshould removes the full translation "
+            "subspace and may also remove physical low-frequency modes."
+        )
+    else:
+        gate2_status = "REVIEW"
+        warnings.append(
+            "Gate 2 requires review: rigid translations are not cleanly "
+            "identified as the three lowest modes and translation character "
+            "leaks above omega_threshould."
+        )
+
+    if len(negative_nontranslation) > 0:
+        warnings.append(
+            "Gate 1 found "
+            f"{len(negative_nontranslation)} negative non-translation "
+            f"mode(s): {len(unstable_nontranslation)} beyond and "
+            f"{len(small_negative_nontranslation)} within "
+            "negative_mode_tolerance_cm."
+        )
+    if len(unstable_nontranslation) > 0:
+        warnings.append(
+            "Any negative non-translation mode beyond the configured "
+            "tolerance is treated as a structural-stability failure."
+        )
+    elif len(small_negative_nontranslation) > 0:
+        warnings.append(
+            "All negative non-translation modes are within the configured "
+            "numerical tolerance and require review."
+        )
+    if two_dim and len(negative_flexural) > 0:
+        warnings.append(
+            "2D polarization diagnostic: "
+            f"{len(negative_flexural)} negative mode(s) are ZA-like "
+            f"({len(unstable_flexural)} significant, "
+            f"{len(small_negative_flexural)} small)."
+        )
+    if two_dim and len(negative_other) > 0:
+        warnings.append(
+            "2D polarization diagnostic: "
+            f"{len(negative_other)} negative mode(s) are non-ZA "
+            f"({len(unstable_other)} significant, "
+            f"{len(small_negative_other)} small)."
+        )
+
+    cutoff_excluded_nontranslation = np.flatnonzero(
+        cutoff_inactive & nontranslation_mask
+    )
+    cutoff_excluded_positive_nontranslation = np.flatnonzero(
+        positive_physical_below_cutoff
+    )
+    cutoff_excluded_za = np.array([], dtype=int)
+    if two_dim:
+        cutoff_excluded_za = cutoff_excluded_positive_nontranslation[
+            z_polarization[cutoff_excluded_positive_nontranslation]
+            >= flexural_min
+        ]
+    overall_status = gate2_status
+    if gate1_status in {"REVIEW", "REVIEW_2D_FLEXURAL"}:
+        overall_status = "PASS_WITH_WARNING"
+    flexural_fail_allowed = (
+        gate1_status == "FAIL_2D_FLEXURAL"
+        and allow_2d_flexural_fail
+    )
+    if flexural_fail_allowed:
+        overall_status = "TEST_ONLY_FAIL_2D_FLEXURAL"
+        warnings.append(
+            "allow_2d_flexural_fail=True: continuing for an explicitly "
+            "marked test calculation while excluding negative modes."
+        )
+    if gate1_status == "FAIL":
+        overall_status = "FAIL"
+    elif gate1_status == "FAIL_2D_FLEXURAL" and not flexural_fail_allowed:
+        overall_status = "FAIL_2D_FLEXURAL"
+
+    diagnostics = {
+        "status": overall_status,
+        "gate1_status": gate1_status,
+        "gate2_status": gate2_status,
+        "translation_mode_indices": translation_indices.tolist(),
+        "lowest_mode_indices": lowest_indices.tolist(),
+        "translation_mode_overlaps": overlaps[translation_indices].tolist(),
+        "translation_capture": translation_capture,
+        "minimum_translation_overlap": minimum_translation_overlap,
+        "asr_residual_ratio": asr_residual_ratio,
+        "active_translation_leakage": active_translation_leakage,
+        "inactive_translation_capture": inactive_translation_capture,
+        "negative_nontranslation_indices": (
+            negative_nontranslation.tolist()
+        ),
+        "negative_nontranslation_frequencies_cm": (
+            frequencies_cm[negative_nontranslation].tolist()
+        ),
+        "negative_nontranslation_z_polarization": (
+            z_polarization[negative_nontranslation].tolist()
+        ),
+        "significant_negative_nontranslation_count": int(
+            len(unstable_nontranslation)
+        ),
+        "significant_negative_nontranslation_indices": (
+            unstable_nontranslation.tolist()
+        ),
+        "significant_negative_nontranslation_frequencies_cm": (
+            frequencies_cm[unstable_nontranslation].tolist()
+        ),
+        "small_negative_nontranslation_count": int(
+            len(small_negative_nontranslation)
+        ),
+        "small_negative_nontranslation_indices": (
+            small_negative_nontranslation.tolist()
+        ),
+        "small_negative_nontranslation_frequencies_cm": (
+            frequencies_cm[small_negative_nontranslation].tolist()
+        ),
+        "negative_za_like_count": int(len(negative_flexural)),
+        "negative_za_like_indices": negative_flexural.tolist(),
+        "negative_za_like_frequencies_cm": (
+            frequencies_cm[negative_flexural].tolist()
+        ),
+        "negative_za_like_z_polarization": (
+            z_polarization[negative_flexural].tolist()
+        ),
+        "negative_non_za_count": int(len(negative_other)) if two_dim else 0,
+        "negative_non_za_indices": (
+            negative_other.tolist() if two_dim else []
+        ),
+        "negative_non_za_frequencies_cm": (
+            frequencies_cm[negative_other].tolist() if two_dim else []
+        ),
+        "negative_non_za_z_polarization": (
+            z_polarization[negative_other].tolist() if two_dim else []
+        ),
+        "cutoff_excluded_mode_count": int(np.sum(cutoff_inactive)),
+        "cutoff_excluded_nontranslation_count": int(
+            len(cutoff_excluded_nontranslation)
+        ),
+        "cutoff_excluded_positive_nontranslation_count": int(
+            len(cutoff_excluded_positive_nontranslation)
+        ),
+        "cutoff_excluded_positive_nontranslation_indices": (
+            cutoff_excluded_positive_nontranslation.tolist()
+        ),
+        "cutoff_excluded_positive_nontranslation_frequencies_cm": (
+            frequencies_cm[
+                cutoff_excluded_positive_nontranslation
+            ].tolist()
+        ),
+        "cutoff_excluded_za_mode_count": int(len(cutoff_excluded_za)),
+        "cutoff_excluded_za_mode_indices": cutoff_excluded_za.tolist(),
+        "cutoff_excluded_za_frequencies_cm": (
+            frequencies_cm[cutoff_excluded_za].tolist()
+        ),
+        "flexural_polarization_min": float(flexural_min),
+        "allow_2d_flexural_fail": allow_2d_flexural_fail,
+        "two_dim": two_dim,
+        "omega_threshould_cm": float(setup.omega_threshould),
+        "warnings": warnings,
+    }
+
+    print(
+        "mode gates: "
+        f"Gate1={gate1_status}, Gate2={gate2_status}, "
+        f"status={overall_status}"
+    )
+    print(
+        "translation modes: "
+        f"indices={translation_indices.tolist()}, "
+        f"capture={translation_capture:.12f}, "
+        f"active leakage={active_translation_leakage:.3e}, "
+        f"ASR residual={asr_residual_ratio:.3e}"
+    )
+    for warning in warnings:
+        print(f"WARNING: {warning}")
+
+    if gate1_status == "FAIL":
+        raise ValueError(
+            "Mode Gate 1 failed because significant negative "
+            "non-translation modes were found."
+        )
+    if gate1_status == "FAIL_2D_FLEXURAL" and not flexural_fail_allowed:
+        raise ValueError(
+            "Mode Gate 1 failed with FAIL_2D_FLEXURAL because significant "
+            "negative ZA-like non-translation modes were found."
+        )
+    if gate2_status == "REVIEW":
+        raise ValueError(
+            "Mode Gate 2 requires review and omega_threshould does not "
+            "isolate the translation subspace."
+        )
+
+    active_mask = cutoff_active & ~translation_mask
+    return diagnostics, translation_mask, active_mask
+
+
+def _mean_positive_spacing(frequencies, excluded_mask):
+    """Return mean spacing after removing rigid translations."""
+    frequencies = np.asarray(frequencies)
+    positive = np.sort(frequencies[(frequencies > 0.0) & ~excluded_mask])
+    if len(positive) < 2:
+        raise ValueError("at least two positive non-translation modes are required")
+    return float(np.mean(np.diff(positive)))
+
+
 '''
 evaluate velocity operator.
 structure file: unitcell structure with vasp POSCAR format
@@ -96,7 +481,16 @@ Vx, Vy, Vz is the return of get_Vij
 omega--> phonon frequency
 note that eigenvector is assumed to store in column order (same as the return of numpy.linalg.eig)
 '''
-def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould,fix_diag):
+def get_Sij(
+    Vx,
+    Vy,
+    Vz,
+    eigenvector,
+    omega,
+    omega_threshould,
+    fix_diag,
+    excluded_modes=None,
+):
 
     nmodes=len(omega)
 
@@ -130,10 +524,12 @@ def get_Sij(Vx,Vy,Vz, eigenvector, omega,omega_threshould,fix_diag):
     Sijz=np.zeros((nmodes,nmodes))
 
 
+    if excluded_modes is None:
+        excluded_modes = np.zeros(nmodes, dtype=bool)
     inv_omega=np.zeros(nmodes)
     for i in range(nmodes):
         #tentative
-        if omega[i] >omega_threshould:
+        if omega[i] > omega_threshould and not excluded_modes[i]:
             inv_omega[i]=1.0/np.sqrt(omega[i])
         else:
             inv_omega[i]=0.0
@@ -214,44 +610,50 @@ def get_thermal_conductivity(setup):
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
     omega=[]
-    #extract minimum index of negative frequency
-    mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
             val=-np.sqrt(-eigenvalue[i])*pc.scale_cm
             omega.append(val)
-            mode_negative=i
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould,setup.fix_diag)
+    omega=np.asarray(omega)
+    mode_gate, translation_mask, active_mask = _evaluate_mode_gates(
+        setup,
+        eigenvalue,
+        eigenvector,
+        masses,
+        omega,
+    )
+    Sx,Sy,Sz=get_Sij(
+        Vx,
+        Vy,
+        Vz,
+        eigenvector,
+        omega,
+        setup.omega_threshould,
+        setup.fix_diag,
+        excluded_modes=translation_mask,
+    )
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     constant = np.pi*constant/48.0
 
     if setup.using_mean_spacing:
-        dwavg=0.0
-        #not consider the negative mode contribution
-        for i in range(mode_negative+1,nmodes-1):
-            if omega[i] > 0.0:
-                dwavg+=omega[i+1]-omega[i]
-            elif omega[i+1] >0.0:
-                dwavg+=omega[i+1]
-        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
+        dwavg=_mean_positive_spacing(omega, translation_mask)
         print('average mode spacing:{0:8f} cm-1'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
         broad=setup.broadening_factor
     
     Di=np.zeros(len(omega))
-    #not consider the negative mode contribution
-    for i in range(mode_negative+1,nmodes):
+    active_indices=np.flatnonzero(active_mask)
+    for i in active_indices:
         Di_loc = 0.0
-        for j in range(mode_negative+1,nmodes):
-            if(omega[i] > setup.omega_threshould):
-                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
-                if(dwij > setup.broadening_threshould):
-                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
+        for j in active_indices:
+            dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+            if(dwij > setup.broadening_threshould):
+                Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
         Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
 
     vol = atoms.get_volume()
@@ -263,12 +665,16 @@ def get_thermal_conductivity(setup):
         kf.write('frequency[cm-1]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
         for i in range(nmodes):
             xfreq = omega[i]*cmfact
-            expfreq = np.exp(xfreq)
-            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            cv_i = _mode_heat_capacity(xfreq, pc.BOLTZMANN_CONSTANT)
             kappa_info[i]=[omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]]
             kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i],Di[i]*1.0e4,cv_i*kappafct*Di[i]))
 
-    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
+    return {
+        'freq':kappa_info[:,0],
+        'diffusivity':kappa_info[:,1],
+        'thermal_conductivity':kappa_info[:,2],
+        'mode_gate':mode_gate,
+    }
 
 '''
 input is class setup object.
@@ -322,31 +728,38 @@ def get_resolved_thermal_conductivity(setup):
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
     omega=[]
-    #extract minimum index of negative frequency
-    mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
             val=-np.sqrt(-eigenvalue[i])*pc.scale_cm
             omega.append(val)
-            mode_negative=i
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_cm
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould,setup.fix_diag)
+    omega=np.asarray(omega)
+    mode_gate, translation_mask, active_mask = _evaluate_mode_gates(
+        setup,
+        eigenvalue,
+        eigenvector,
+        masses,
+        omega,
+    )
+    Sx,Sy,Sz=get_Sij(
+        Vx,
+        Vy,
+        Vz,
+        eigenvector,
+        omega,
+        setup.omega_threshould,
+        setup.fix_diag,
+        excluded_modes=translation_mask,
+    )
 
     constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
     #not averaged out for x-,y-,z- dimension
     constant = np.pi*constant/16.0
 
     if setup.using_mean_spacing:
-        dwavg=0.0
-        #using only positive energy side
-        for i in range(mode_negative+1,nmodes-1):
-            if omega[i] > 0.0:
-                dwavg+=omega[i+1]-omega[i]
-            elif omega[i+1] >0.0:
-                dwavg+=omega[i+1]
-        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
+        dwavg=_mean_positive_spacing(omega, translation_mask)
         print('average mode spacing:{0:8f} cm-1'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
@@ -354,18 +767,17 @@ def get_resolved_thermal_conductivity(setup):
     
     #x-,y-,z-direction
     Di=np.zeros((len(omega),3))
-    #using only positive energy side
-    for i in range(mode_negative+1,nmodes):
+    active_indices=np.flatnonzero(active_mask)
+    for i in active_indices:
         Di_loc_x = 0.0
         Di_loc_y = 0.0
         Di_loc_z = 0.0
-        for j in range(mode_negative+1,nmodes):
-            if(omega[i] > setup.omega_threshould):
-                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
-                if(dwij > setup.broadening_threshould):
-                    Di_loc_x += dwij*Sx[j,i]**2
-                    Di_loc_y += dwij*Sy[j,i]**2
-                    Di_loc_z += dwij*Sz[j,i]**2
+        for j in active_indices:
+            dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+            if(dwij > setup.broadening_threshould):
+                Di_loc_x += dwij*Sx[j,i]**2
+                Di_loc_y += dwij*Sy[j,i]**2
+                Di_loc_z += dwij*Sz[j,i]**2
 
         Di[i,0] += Di_loc_x*constant/(omega[i]**2)
         Di[i,1] += Di_loc_y*constant/(omega[i]**2)
@@ -385,15 +797,39 @@ def get_resolved_thermal_conductivity(setup):
         kf.write('frequency[cm-1]   Diffusivity[cm^2/s]: x,y,z   Thermal_conductivity[W/mK]: x,y,z \n')
         for i in range(nmodes):
             xfreq = omega[i]*cmfact
-            expfreq = np.exp(xfreq)
-            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            cv_i = _mode_heat_capacity(xfreq, pc.BOLTZMANN_CONSTANT)
             diffusivity[i]=Di[i]*1.0e4
             kappa[i]=cv_i*kappafct*Di[i]
             kf.write('{0:8f}  {1:8f}  {2:8f} {3:8f} {4:8f} {5:8f} {6:8f}　\n'.
             format(omega[i],diffusivity[i,0],diffusivity[i,1],diffusivity[i,2],
             kappa[i,0],kappa[i,1],kappa[i,2]))
 
-    return {'freq':omega,'diffusivity':diffusivity,'thermal_conductivity':kappa}
+    result = {
+        'freq':omega,
+        'diffusivity':diffusivity,
+        'thermal_conductivity':kappa,
+        'mode_gate':mode_gate,
+    }
+    if setup.two_dim:
+        kappa_total = np.sum(kappa, axis=0)
+        kappa_summary = {
+            'x':float(kappa_total[0]),
+            'y':float(kappa_total[1]),
+            'z_diagnostic':float(kappa_total[2]),
+            'in_plane_average':float(
+                0.5 * (kappa_total[0] + kappa_total[1])
+            ),
+            'unit':'W/mK',
+        }
+        result['thermal_conductivity_summary'] = kappa_summary
+        print(
+            "2D thermal conductivity: "
+            f"kappa_x={kappa_summary['x']:.12f}, "
+            f"kappa_y={kappa_summary['y']:.12f}, "
+            "kappa_in_plane="
+            f"{kappa_summary['in_plane_average']:.12f} W/mK"
+        )
+    return result
 
 
 '''
@@ -405,6 +841,7 @@ def get_thermal_conductivity_THz_unit(setup):
     from ase.io import read
     import numpy as np
     from pyAF.constants import physical_constants
+    from pyAF.data_parse import symmetrize_lammps, symmetrize_phonopy
     print('enter thermal conductivity calculation')
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
@@ -432,14 +869,22 @@ def get_thermal_conductivity_THz_unit(setup):
             
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
-        lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
+        else:
+            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
-        #convert phonopy style force constant to mass scaled lammps format dynamical matrix
-        from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
-        fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
-        lammps_dyn=phonopy_to_flat(fc_scaled,natom)
+        if(setup.symmetrize_fc):
+            print('dynamical matrix&force constants are symmetrized')
+            lammps_dyn=symmetrize_phonopy(atoms,setup.dyn_file)
+        else:
+            #convert phonopy style force constant to mass scaled lammps format dynamical matrix
+            from pyAF.data_parse import read_fc_phonopy,phonopy_to_flat
+            fc_scaled=read_fc_phonopy(setup.dyn_file,natom, masses)
+            lammps_dyn=phonopy_to_flat(fc_scaled,natom)
     else:
         print('not supported style')
         return
@@ -448,69 +893,86 @@ def get_thermal_conductivity_THz_unit(setup):
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
     omega=[]
-    #extract minimum index of negative frequency
     #omega is angular frequency
-    mode_negative=0
     for i in range(nmodes):
         if eigenvalue[i] <0.0:
             val=-np.sqrt(-eigenvalue[i])*pc.scale_THz*2.0*np.pi
             omega.append(val)
-            mode_negative=i
         else:
             val=np.sqrt(eigenvalue[i])*pc.scale_THz*2.0*np.pi
             omega.append(val)
-    Sx,Sy,Sz=get_Sij(Vx,Vy,Vz,eigenvector,omega,setup.omega_threshould, setup.fix_diag)
+    omega=np.asarray(omega)
+    frequencies_cm = (
+        np.sign(eigenvalue)
+        * np.sqrt(np.abs(eigenvalue))
+        * pc.scale_cm
+    )
+    mode_gate, translation_mask, active_mask = _evaluate_mode_gates(
+        setup,
+        eigenvalue,
+        eigenvector,
+        masses,
+        frequencies_cm,
+    )
+    unit_factor = _angular_thz_per_wavenumber(pc)
+    omega_threshold = setup.omega_threshould * unit_factor
+    lorentzian_threshold = setup.broadening_threshould / unit_factor
+    Sx,Sy,Sz=get_Sij(
+        Vx,
+        Vy,
+        Vz,
+        eigenvector,
+        omega,
+        omega_threshold,
+        setup.fix_diag,
+        excluded_modes=translation_mask,
+    )
 
-    #constant = ((1.0e-17*pc.eV_J*pc.AVOGADRO)**0.5)*(pc.scale_cm**3)
-    #constant = np.pi*constant/48.0
+    frequency_scale = pc.scale_THz * 2.0 * np.pi
+    constant = (
+        np.pi
+        / 48.0
+        * (1.0e-17 * pc.eV_J * pc.AVOGADRO) ** 0.5
+        * frequency_scale**3
+    )
 
     if setup.using_mean_spacing:
-        dwavg=0.0
-        #not consider the negative mode contribution
-        for i in range(mode_negative+1,nmodes-1):
-            if omega[i] > 0.0:
-                dwavg+=omega[i+1]-omega[i]
-            elif omega[i+1] >0.0:
-                dwavg+=omega[i+1]
-        dwavg=dwavg/(len(range(mode_negative+1,nmodes-1))-1)
+        dwavg=_mean_positive_spacing(omega, translation_mask)
         print('average mode spacing:{0:8f} 2piTHz'.format(dwavg))
         broad=setup.broadening_factor*dwavg
     else:
-        broad=setup.broadening_factor
+        broad=setup.broadening_factor*unit_factor
 
     #vol: Angstrom^3
     vol = atoms.get_volume()
-    #scale Sx, Sy, Sz here
-    Sx=Sx*pc.hbar/(4.0*vol)
-    Sy=Sy*pc.hbar/(4.0*vol)
-    Sz=Sz*pc.hbar/(4.0*vol)
-
-    constant=np.pi*vol**2/(3.0*pc.hbar**2)
 
     Di=np.zeros(len(omega))
-    #not consider the negative mode contribution
-    for i in range(mode_negative+1,nmodes):
+    active_indices=np.flatnonzero(active_mask)
+    for i in active_indices:
         Di_loc = 0.0
-        for j in range(mode_negative+1,nmodes):
-            if(omega[i] > setup.omega_threshould):
-                dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
-                if(dwij > setup.broadening_threshould):
-                    Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
+        for j in active_indices:
+            dwij = (1.0/np.pi)*broad/( (omega[j] - omega[i])**2 + broad**2 )
+            if(dwij > lorentzian_threshold):
+                Di_loc = Di_loc + dwij*Sx[j,i]**2+dwij*Sy[j,i]**2+dwij*Sz[j,i]**2
         Di[i] = Di[i] + Di_loc*constant/(omega[i]**2)
 
     #Di=Di*1.0e-4
     kappafct = 1.0e30/vol
     #1.0e12:Hz to THz
-    freqfact = pc.hbar/(2.0*pc.BOLTZMANN_CONSTANT*setup.temperature)*1.0e12
+    freqfact = pc.hbar/(pc.BOLTZMANN_CONSTANT*setup.temperature)*1.0e12
     kappa_info=np.zeros((nmodes,3))
 
     with open('kappa_out_THz'+setup.style,'w') as kf:
         kf.write('frequency[THz]   Diffusivity[cm^2/s]   Thermal_conductivity[W/mK] \n')
         for i in range(nmodes):
             xfreq = omega[i]*freqfact
-            expfreq = np.exp(xfreq)
-            cv_i = pc.BOLTZMANN_CONSTANT*xfreq*xfreq*expfreq/(expfreq - 1.0)**2
+            cv_i = _mode_heat_capacity(xfreq, pc.BOLTZMANN_CONSTANT)
             kappa_info[i]=[omega[i]/2.0/np.pi,Di[i]*1.0e4,cv_i*kappafct*Di[i]]
             kf.write('{0:8f}  {1:12f}  {2:12f}\n'.format(omega[i]/2.0/np.pi,Di[i]*1.0e4,cv_i*kappafct*Di[i]))
 
-    return {'freq':kappa_info[:,0],'diffusivity':kappa_info[:,1],'thermal_conductivity':kappa_info[:,2]}
+    return {
+        'freq':kappa_info[:,0],
+        'diffusivity':kappa_info[:,1],
+        'thermal_conductivity':kappa_info[:,2],
+        'mode_gate':mode_gate,
+    }

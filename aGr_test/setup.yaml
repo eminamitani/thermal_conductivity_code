@@ -10,3 +10,7 @@ two_dim: True
 vdw_thickness: 3.4
 symmetrize_fc: True
 fix_diag: True
+negative_mode_tolerance_cm: 0.1
+flexural_polarization_min: 0.8
+# Exploratory override: retain FAIL_2D_FLEXURAL status but continue this test.
+allow_2d_flexural_fail: True

@@ -99,7 +99,7 @@ def symmetrize_phonopy(atoms,FC_file):
     #read as ndarray, no mass scaling here
     fc_phonopy=read_fc_phonopy_noscale(FC_file,natom)
     
-    phonon.set_force_constants(fc_phonopy)
+    phonon.force_constants = fc_phonopy
     phonon.symmetrize_force_constants(show_drift=True)
     symetrized_fc=phonon.force_constants
     #primaly check of frequency
@@ -134,7 +134,7 @@ def symmetrize_lammps(atoms,FC_file):
     #convert mass scaled dynamical matrix to force constant form
     fc_phonopy=dynmat_to_fcphonopy(converted_dyn,natom,masses)
     
-    phonon.set_force_constants(fc_phonopy)
+    phonon.force_constants = fc_phonopy
     phonon.symmetrize_force_constants(show_drift=True)
     symetrized_fc=phonon.force_constants
     #primaly check of frequency
@@ -149,7 +149,6 @@ def symmetrize_lammps(atoms,FC_file):
     
     #return flat form dynamical matrix
     return phonopy_to_flat(symmetrized_dyn,natom=natom)
-
 
 
 
