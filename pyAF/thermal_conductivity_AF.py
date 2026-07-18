@@ -1,6 +1,62 @@
 import numpy as np
+import warnings
 from ase.io import read
 from pyAF.nearest import find_nearest_optimized
+
+
+def _validate_cell_and_api(atoms, api_kind, two_dim, tolerance=0.01):
+    """Validate geometry assumptions and the selected conductivity API."""
+    cell = np.asarray(atoms.cell, dtype=float)
+    if cell.shape != (3, 3):
+        raise ValueError(
+            f"cell matrix must have shape (3, 3); received {cell.shape}"
+        )
+
+    off_diagonal = cell - np.diag(np.diag(cell))
+    maximum_off_diagonal = float(np.max(np.abs(off_diagonal)))
+    if maximum_off_diagonal > tolerance:
+        raise ValueError(
+            "non-orthogonal cells are not supported: maximum absolute "
+            f"off-diagonal cell element is {maximum_off_diagonal:.6g} "
+            f"Angstrom (tolerance {tolerance:.6g} Angstrom)"
+        )
+
+    if two_dim and api_kind in ("scalar", "thz"):
+        warnings.warn(
+            f"two_dim=True was passed to the scalar {api_kind} conductivity "
+            "API. This compatibility path uses the full 3D cell volume, "
+            "including vacuum, so the reported conductivity depends on the "
+            "chosen area and thickness. Confirm that this is the intended "
+            "calculation. Use resolved_thermal_conductivity with "
+            "vdw_thickness for an explicitly normalized 2D result.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
+def _validate_dynamical_matrix_shape(dynamical_matrix, nmodes):
+    """Return a dynamical matrix only when its shape matches the structure."""
+    dynamical_matrix = np.asarray(dynamical_matrix)
+    expected_shape = (nmodes, nmodes)
+    if dynamical_matrix.shape != expected_shape:
+        raise ValueError(
+            "dynamical matrix shape is inconsistent with the structure: "
+            f"expected {expected_shape}, received {dynamical_matrix.shape}"
+        )
+    return dynamical_matrix
+
+
+def _load_flat_dynamical_matrix(dyn_file, nmodes):
+    """Load a flat text dynamical matrix with an explicit size check."""
+    dynamical_matrix = np.loadtxt(dyn_file)
+    expected_size = nmodes * nmodes
+    if dynamical_matrix.size != expected_size:
+        raise ValueError(
+            "dynamical matrix element count is inconsistent with the "
+            f"structure: expected {expected_size}, received "
+            f"{dynamical_matrix.size}"
+        )
+    return dynamical_matrix.reshape((nmodes, nmodes))
 
 
 def _mode_heat_capacity(xfreq, boltzmann_constant):
@@ -397,6 +453,7 @@ Dyn: Flat format (low:0x,0y,0z....., column:0x,0y,0z....) natom*3xnatom*3 Dynami
 def get_Vij_from_flat(structure_file,Dyn):
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
+    Dyn = _validate_dynamical_matrix_shape(Dyn, natom * 3)
 
     dist=np.zeros((natom,natom,3))
 
@@ -410,7 +467,34 @@ def get_Vij_from_flat(structure_file,Dyn):
             #dist[i,j]=find_nearest_ortho(positions,cell,i,j)
             #invert
             dist[j,i]=-dist[i,j]
-    
+
+    matrix_scale = float(np.max(np.abs(Dyn))) if Dyn.size else 0.0
+    block_tolerance = matrix_scale * 1.0e-8
+    cell_lengths = np.linalg.norm(np.asarray(atoms.cell), axis=1)
+    half_shortest_cell = 0.5 * float(np.min(cell_lengths))
+    ambiguous_pairs = 0
+    if matrix_scale > 0.0:
+        for i in range(natom):
+            for j in range(i):
+                block = Dyn[3*i:3*i+3, 3*j:3*j+3]
+                if (
+                    np.max(np.abs(block)) > block_tolerance
+                    and np.linalg.norm(dist[i, j]) >= half_shortest_cell - 1.0e-8
+                ):
+                    ambiguous_pairs += 1
+    if ambiguous_pairs:
+        warnings.warn(
+            "periodic-image preflight found "
+            f"{ambiguous_pairs} non-negligible force-constant atom pair(s) "
+            "at minimum-image distances greater than or equal to half the "
+            f"shortest cell length ({half_shortest_cell:.6g} Angstrom). "
+            "A Gamma-point aggregated dynamical matrix cannot distinguish "
+            "multiple periodic images; use image-resolved force constants "
+            "and a corresponding velocity operator before treating this "
+            "conductivity as quantitative.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     
     Rx=np.repeat(dist[:,:,0],3,axis=1)
     Rx=np.repeat(Rx,3,axis=0)
@@ -495,17 +579,18 @@ def get_Sij(
     nmodes=len(omega)
 
     #confirm matrix shape
-    if(Vx.shape[0]!=Vx.shape[1] or Vx.shape[0]!=nmodes):
-        assert "matrix shape Vx is strange"
-
-    if(Vy.shape[0]!=Vy.shape[1] or Vy.shape[0]!=nmodes):
-        assert "matrix shape Vy is strange"   
-
-    if(Vz.shape[0]!=Vz.shape[1] or Vz.shape[0]!=nmodes):
-        assert "matrix shape Vz is strange"  
-
-    if(eigenvector.shape[0]!=eigenvector.shape[1] or eigenvector.shape[0]!=nmodes):
-        assert "matrix shape eigenvector is strange" 
+    expected_shape = (nmodes, nmodes)
+    for name, matrix in (
+        ("Vx", Vx),
+        ("Vy", Vy),
+        ("Vz", Vz),
+        ("eigenvector", eigenvector),
+    ):
+        if np.shape(matrix) != expected_shape:
+            raise ValueError(
+                f"matrix {name} must have shape {expected_shape}; "
+                f"received {np.shape(matrix)}"
+            )
 
     #here the shape of eigenvector is assumed to that the typical return of numpy.linalg.eig
     #thus, each column is the eigenvector of each mode
@@ -563,34 +648,22 @@ def get_thermal_conductivity(setup):
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
-    cell=atoms.cell
-    '''
-    this code assume orthorombic cell, check
-    '''
-    celldiag=np.diag(cell)
-    cellnondiag=cell-celldiag
-    if(np.sum(cellnondiag) > 0.01):
-        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+    _validate_cell_and_api(
+        atoms,
+        api_kind="scalar",
+        two_dim=bool(setup.two_dim),
+    )
     
     positions=atoms.positions
     masses=atoms.get_masses()
     nmodes=natom*3
-    '''
-    this module returns average of x-,y-,z- direction.
-    The volume to scale the thermal conductivity is the volume of cell.
-    For 2D system, resolved version is better to use, thus, here check and assert 
-    '''
-    if(setup.two_dim):
-        assert "for 2D system, use resolved version is better. \
-            In resolved version, x-,y-,z- direction outputted separetely and you can set vdw_thickness to set volume"
-            
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
         if(setup.symmetrize_fc):
             print('dynamical matrix&force constants are symmetrized')
             lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
         else:
-            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+            lammps_dyn=_load_flat_dynamical_matrix(setup.dyn_file,nmodes)
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
@@ -606,6 +679,7 @@ def get_thermal_conductivity(setup):
         print('not supported style')
         return
 
+    lammps_dyn = _validate_dynamical_matrix_shape(lammps_dyn, nmodes)
     Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
@@ -689,14 +763,11 @@ def get_resolved_thermal_conductivity(setup):
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
-    cell=atoms.cell
-    '''
-    this code assume orthorombic cell, check
-    '''
-    celldiag=np.diag(cell)
-    cellnondiag=cell-celldiag
-    if(np.sum(cellnondiag) > 0.01):
-        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+    _validate_cell_and_api(
+        atoms,
+        api_kind="resolved",
+        two_dim=bool(setup.two_dim),
+    )
 
     positions=atoms.positions
     masses=atoms.get_masses()
@@ -708,7 +779,7 @@ def get_resolved_thermal_conductivity(setup):
             lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
 
         else:
-            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+            lammps_dyn=_load_flat_dynamical_matrix(setup.dyn_file,nmodes)
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
@@ -724,6 +795,7 @@ def get_resolved_thermal_conductivity(setup):
         print('not supported style')
         return
 
+    lammps_dyn = _validate_dynamical_matrix_shape(lammps_dyn, nmodes)
     Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()
@@ -846,34 +918,22 @@ def get_thermal_conductivity_THz_unit(setup):
     structure_file=setup.structure_file
     atoms=read(structure_file,format='vasp')
     natom=len(atoms.positions)
-    cell=atoms.cell
-    '''
-    this code assume orthorombic cell, check
-    '''
-    celldiag=np.diag(cell)
-    cellnondiag=cell-celldiag
-    if(np.sum(cellnondiag) > 0.01):
-        assert 'cell vector has nondiagonal element. This code only support orthorhombic system. please check!'
+    _validate_cell_and_api(
+        atoms,
+        api_kind="thz",
+        two_dim=bool(setup.two_dim),
+    )
     
     positions=atoms.positions
     masses=atoms.get_masses()
     nmodes=natom*3
-    '''
-    this module returns average of x-,y-,z- direction.
-    The volume to scale the thermal conductivity is the volume of cell.
-    For 2D system, resolved version is better to use, thus, here check and assert 
-    '''
-    if(setup.two_dim):
-        assert "for 2D system, use resolved version is better. \
-            In resolved version, x-,y-,z- direction outputted separetely and you can set vdw_thickness to set volume"
-            
     if(setup.style=='lammps-regular'):
         print('style is lammps-regular')
         if(setup.symmetrize_fc):
             print('dynamical matrix&force constants are symmetrized')
             lammps_dyn=symmetrize_lammps(atoms,setup.dyn_file)
         else:
-            lammps_dyn=np.loadtxt(setup.dyn_file).reshape((nmodes,nmodes))
+            lammps_dyn=_load_flat_dynamical_matrix(setup.dyn_file,nmodes)
 
     elif(setup.style=='phonopy'):
         print('style is phonopy')
@@ -889,6 +949,7 @@ def get_thermal_conductivity_THz_unit(setup):
         print('not supported style')
         return
 
+    lammps_dyn = _validate_dynamical_matrix_shape(lammps_dyn, nmodes)
     Vx,Vy,Vz=get_Vij_from_flat(structure_file,lammps_dyn)
     eigenvalue, eigenvector=np.linalg.eigh(lammps_dyn)
     pc=physical_constants()

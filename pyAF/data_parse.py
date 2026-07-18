@@ -128,7 +128,15 @@ def symmetrize_lammps(atoms,FC_file):
     
     #read as ndarray
     nmodes=natom*3
-    lammps_dyn=np.loadtxt(FC_file).reshape((nmodes,nmodes))
+    lammps_dyn=np.loadtxt(FC_file)
+    expected_size=nmodes*nmodes
+    if lammps_dyn.size != expected_size:
+        raise ValueError(
+            "dynamical matrix element count is inconsistent with the "
+            f"structure: expected {expected_size}, received "
+            f"{lammps_dyn.size}"
+        )
+    lammps_dyn=lammps_dyn.reshape((nmodes,nmodes))
     converted_dyn=flat_to_phonopy(lammps_dyn,natom)
     
     #convert mass scaled dynamical matrix to force constant form
@@ -149,6 +157,5 @@ def symmetrize_lammps(atoms,FC_file):
     
     #return flat form dynamical matrix
     return phonopy_to_flat(symmetrized_dyn,natom=natom)
-
 
 

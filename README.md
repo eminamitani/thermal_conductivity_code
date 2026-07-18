@@ -104,6 +104,58 @@ cm-1; when it is `True`, `broadening_factor` is dimensionless and multiplies
 the mean mode spacing. `broadening_threshould` is a Lorentzian-weight cutoff
 in (cm-1)^-1. The THz implementation converts these values internally.
 
+`broadening_threshould` corresponds to GULP's
+[`lorentzian_tolerance`](https://gulp.curtin.edu.au/help/help_44_txt.html).
+The sample value `0.01` is retained as the GULP-compatible default: a mode-pair
+contribution is set to zero when its Lorentzian weight is below this value.
+Setting `broadening_threshould: 0.0` keeps the full Lorentzian without a
+drop-tolerance cutoff.
+
+A finite value is a computational truncation of the Lorentzian tails, not a
+physical broadening parameter. It can change the quantitative mode
+diffusivities and thermal conductivity, so calculations using a finite
+tolerance should report its value and verify convergence as the tolerance is
+reduced toward zero. For the bundled aSi512 input, changing only this setting
+from `0.01` to `0.0` changes the summed conductivity at 300 K from
+`0.980092` to `1.127902 W/mK`; results obtained with different tolerances
+should therefore not be compared as if they used the same AF numerical
+definition.
+
+### Input validation and periodic images
+
+All three conductivity routes require a cell matrix whose off-diagonal
+elements are no larger than `0.01 Angstrom`. A non-orthogonal cell stops the
+calculation with `ValueError`. The check uses
+`cell - np.diag(np.diag(cell))`; the earlier
+`cell - np.diag(cell)` expression incorrectly broadcast a length-three vector
+over the matrix.
+
+The dynamical matrix must have exactly `(3 * natom, 3 * natom)` elements.
+Malformed LAMMPS matrices and matrices returned by either conversion or
+symmetrization route stop before the eigensolver or velocity-operator
+calculation. `get_Sij` also rejects inconsistent velocity-operator and
+eigenvector shapes.
+
+For `two_dim: True`, use `resolved_thermal_conductivity`. The scalar cm-1 and
+THz interfaces remain available for compatibility, but emit a warning because
+they use the full 3D cell volume, including vacuum; their conductivity
+therefore depends on the chosen area and thickness. Confirm that this is the
+intended normalization before using such a result quantitatively.
+
+The velocity-operator construction also performs a periodic-image preflight.
+It warns when a non-negligible interatomic dynamical-matrix block
+(larger than `1e-8` of the largest matrix element) occurs at a minimum-image
+distance greater than or equal to half the shortest cell length. In that
+regime, a Gamma-point aggregated dynamical matrix may combine contributions
+from multiple periodic images that this implementation cannot distinguish.
+Use image-resolved force constants and a corresponding velocity operator
+before treating such a result as quantitative.
+
+This is a conservative warning, not a proof that periodic-image information is
+complete: once force constants have been summed into a Gamma-point matrix,
+distinct image contributions cannot in general be reconstructed from the
+matrix and structure alone.
+
 ### Mode-gate meanings for 3D and 2D
 
 Before evaluating transport, pyAF identifies the three mass-weighted rigid

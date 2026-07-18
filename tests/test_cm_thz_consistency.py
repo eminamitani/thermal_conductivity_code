@@ -48,6 +48,91 @@ def test_mode_heat_capacity_has_finite_zero_frequency_limit():
     )
 
 
+def test_nonorthogonal_cell_is_rejected():
+    atoms = Atoms(
+        "Si",
+        positions=[[0.0, 0.0, 0.0]],
+        cell=[[5.0, -0.02, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]],
+        pbc=True,
+    )
+
+    with pytest.raises(ValueError, match="non-orthogonal cells"):
+        af._validate_cell_and_api(
+            atoms,
+            api_kind="resolved",
+            two_dim=False,
+        )
+
+
+def test_scalar_2d_input_warns_about_vacuum_volume():
+    atoms = Atoms(
+        "C",
+        positions=[[0.0, 0.0, 0.0]],
+        cell=[5.0, 5.0, 20.0],
+        pbc=True,
+    )
+
+    with pytest.warns(RuntimeWarning, match="full 3D cell volume"):
+        af._validate_cell_and_api(
+            atoms,
+            api_kind="scalar",
+            two_dim=True,
+        )
+
+
+def test_thz_2d_input_warns_about_vacuum_volume():
+    atoms = Atoms(
+        "C",
+        positions=[[0.0, 0.0, 0.0]],
+        cell=[5.0, 5.0, 20.0],
+        pbc=True,
+    )
+
+    with pytest.warns(RuntimeWarning, match="intended calculation"):
+        af._validate_cell_and_api(
+            atoms,
+            api_kind="thz",
+            two_dim=True,
+        )
+
+
+def test_dynamical_matrix_shape_is_rejected():
+    with pytest.raises(ValueError, match="expected \\(6, 6\\)"):
+        af._validate_dynamical_matrix_shape(np.zeros((5, 5)), 6)
+
+
+def test_get_sij_rejects_bad_velocity_matrix_shape():
+    with pytest.raises(ValueError, match="matrix Vx"):
+        af.get_Sij(
+            np.zeros((5, 5)),
+            np.zeros((6, 6)),
+            np.zeros((6, 6)),
+            np.eye(6),
+            np.ones(6),
+            0.01,
+            True,
+        )
+
+
+def test_periodic_image_preflight_warns_for_active_half_cell_pair(
+    tmp_path,
+):
+    structure_file = tmp_path / "structure.vasp"
+    atoms = Atoms(
+        "Si2",
+        positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        cell=[2.0, 4.0, 4.0],
+        pbc=True,
+    )
+    write(structure_file, atoms, format="vasp")
+    dyn = np.eye(6)
+    dyn[0:3, 3:6] = 0.1
+    dyn[3:6, 0:3] = 0.1
+
+    with pytest.warns(RuntimeWarning, match="periodic-image preflight"):
+        af.get_Vij_from_flat(str(structure_file), dyn)
+
+
 def test_cm_and_thz_routes_are_unit_invariant(tmp_path, monkeypatch):
     structure_file = tmp_path / "structure.vasp"
     dyn_file = tmp_path / "Dyn.form"
